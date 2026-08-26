@@ -2,11 +2,67 @@
 
 Crypto payment driver for [Lunar](https://lunarphp.io) — pay with crypto as a
 human (wallet-signed on-chain transfer at checkout) or as an agent (x402
-HTTP-402 payment challenge/response).
+HTTP-402 payment challenge/response). USDC on Base, via the
+[x402 protocol](https://github.com/coinbase/x402) (v2).
 
-**Status: early build.** Settlement core is implemented against the x402
-protocol v2 facilitator API and unit tested (mocked HTTP). Not yet run
-end-to-end against a live checkout. Not ready for production use.
+**Status: beta.** Settlement core, payload/response cross-validation, an
+audit-trail/idempotency guard, and both checkout entry points are
+implemented and covered by an end-to-end integration test suite (real Lunar
+Cart → Order → placed order, against a real Currency/Product/Price graph —
+not just mocked HTTP). Known gaps are listed under
+[Known limitations](#known-limitations) below; none of them are silent —
+each fails closed with a clear error rather than doing the wrong thing
+quietly.
+
+## Requirements
+
+- PHP ^8.2 with the `bcmath`, `intl`, and `exif` extensions (all required by
+  `lunarphp/core` itself)
+- Laravel 11 or 12
+- `lunarphp/core` ^1.0
+
+## Installation
+
+```bash
+composer require wakqasahmed/lunar-crypto-payments
+php artisan vendor:publish --tag=lunar-crypto.config
+php artisan migrate
+```
+
+Set the required environment variables (a merchant `pay_to` wallet address
+is the only one without a default — see `config/crypto.php` for the rest):
+
+```env
+LUNAR_CRYPTO_PAY_TO=0xYourWalletAddress
+LUNAR_CRYPTO_X402_PAY_TO=0xYourWalletAddress
+```
+
+## Usage
+
+### Human checkout
+
+Register `crypto` alongside your other payment types
+(`config/lunar/payments.php` or wherever your app configures Lunar's
+`PaymentTypeInterface` drivers), then have your checkout frontend post the
+shopper's signed x402 `PaymentPayload` (from their wallet) as cart data
+under `payment_payload` before calling `authorize()` — same shape as any
+other Lunar payment type, e.g. `lunarphp/stripe`.
+
+### Agent checkout (x402)
+
+Bind an x402-protected route to a `Cart` your app has already built/priced
+via its own product/checkout API:
+
+```php
+use Illuminate\Support\Facades\Route;
+
+Route::post('/x402/carts/{cart}/checkout', CompleteCheckoutController::class)
+    ->middleware('x402');
+```
+
+An agent hitting that route with no `X-PAYMENT` header gets a 402 response
+with payment requirements; retrying with a signed `X-PAYMENT` header
+settles the cart into a placed order, exactly like the human flow.
 
 ## Design
 
@@ -26,8 +82,7 @@ placed order — via one shared pipeline:
   consuming app is responsible for building/pricing the cart itself (its own
   product/checkout API) before ever hitting an x402-protected route — this
   middleware only owns "is this cart paid for", the same boundary
-  `CryptoPaymentType` has for human checkout. Route example in the class
-  docblock.
+  `CryptoPaymentType` has for human checkout.
 - `Actions\AuthorizeCryptoPayment` — the one place a signed payload becomes a
   placed order: resolves/creates the order for a cart, checks the
   `CryptoSettlement` idempotency guard, settles, and finalizes. Both entry
@@ -44,15 +99,15 @@ placed order — via one shared pipeline:
   decimals). Refuses (rather than silently mispricing) if the store currency
   isn't the configured `pegged_currency` — no FX conversion is implemented.
 - `Actions\ValidatePaymentPayload` — checked before a payload ever reaches a
-  facilitator: size cap, required fields, and (critically) that the
-  payload's own `accepted.*` exactly matches the `PaymentRequirements` we
-  just computed. Since requirements are always rebuilt fresh from the
-  order's *current* total, this also catches quote-to-settlement drift — a
-  stale signed amount from before an order total changed will never match.
+  facilitator: size cap, required fields, and (critically) the *signed*
+  `authorization.value`/`.to`, not just the client-echoed `accepted.*` —
+  see below. Since requirements are always rebuilt fresh from the order's
+  *current* total, this also catches quote-to-settlement drift.
 - `Actions\ValidateCryptoConfig` — run at service-provider boot: cross-checks
-  the configured asset address against the configured network for the
-  networks it knows about, catching a testnet/mainnet mismatch at deploy
-  time instead of at the first checkout.
+  the configured asset address against the configured network (both the
+  human-checkout and x402 networks) for the networks it knows about,
+  catching a testnet/mainnet mismatch at deploy time instead of at the first
+  checkout.
 - `Models\CryptoSettlement` — an audit-trail row written the instant a
   facilitator confirms settlement, before the order transaction/`placed_at`
   writes that follow it. On-chain settlement can't be undone; if those writes
@@ -60,8 +115,9 @@ placed order — via one shared pipeline:
   resumes from it instead of settling (and charging) again.
 
 `SettleOnChainPayment` also doesn't trust a facilitator's `/settle` response
-blindly — if it reports a different amount or network than what was
-requested, that's treated as a failed settlement, not a successful one.
+blindly — a reported amount/network that doesn't match what was requested,
+or a missing (required, per spec) `network` field, is treated as a failed
+settlement, not a successful one.
 
 `X402PaymentMiddleware` rate-limits by requester IP
 (`lunar-crypto.x402.rate_limit`, default 30/minute) before doing anything
@@ -72,13 +128,14 @@ spoofable if the consuming app trusts all proxies (`TrustProxies` set to
 for you, so configure `TrustProxies` correctly if you're behind a load
 balancer.
 
-`Actions\ValidatePaymentPayload` checks the *signed* `authorization.value`/
-`.to` against requirements, not just the client-echoed `accepted.amount`/
-`.payTo` — a client rewriting the unsigned `accepted` block to match
-requirements would otherwise sail through a check that only compared
-`accepted.*` against itself, while having actually signed for a different
-amount or recipient. A cold-start review (2026-08-26) caught this in an
-earlier version of this validation.
+`ValidatePaymentPayload` checks the *signed* `authorization.value`/`.to`
+against requirements, not just the client-echoed `accepted.amount`/`.payTo`
+— a client rewriting the unsigned `accepted` block to match requirements
+would otherwise sail through a check that only compared `accepted.*`
+against itself, while having actually signed for a different amount or
+recipient. A cold-start review (2026-08-26) caught this in an earlier
+version of this validation; the exact bypass it found is now a regression
+test (`ValidatePaymentPayloadTest` and, end to end, `CryptoCheckoutTest`).
 
 ### Facilitators
 
@@ -99,38 +156,30 @@ authenticated (signed) requests; that signing isn't implemented yet
 (`SettleOnChainPayment` throws `FacilitatorNotSupportedException` if you add
 `coinbase_cdp` to the order before then) — see `config/crypto.php`.
 
-## Open questions before this is real
+## Known limitations
 
-- Refund path: requires a separate outbound on-chain transfer, not sketched
-  yet.
-- CDP-authenticated facilitator support (JWT request signing) if/when someone
-  wants the mainnet Coinbase option instead of PayAI.
-- Payee (`pay_to`) address change protection: unlike our sibling
-  `agentic-pay-woocommerce` repo's `PayeeAddressChangeGuard` (explicit
-  re-confirmation before a payee wallet change takes effect), this package
-  currently has no guard against a compromised `.env`/deploy pipeline
-  silently redirecting settlements to a different wallet. `ValidateCryptoConfig`
-  only catches an asset/network mismatch, not a `pay_to` change.
-- `CryptoPaymentType`, `AuthorizeCryptoPayment`, `BuildPaymentRequirements`,
-  and `CryptoSettlement` have no test coverage yet — anything touching a
-  Lunar `Cart`/`Order`/`Price`/`Currency` model needs `LunarServiceProvider`
-  — and its own dependency chain (Blink, MediaLibrary, ActivityLog,
-  NestedSet, Converter, per how `lunarphp/stripe`'s own test suite bootstraps
-  it) — registered, plus Cart/Order factories and migrations that live only
-  in the monorepo's internal test suite (`Lunar\Base\ModelManifestInterface`
-  isn't bound without it — every Lunar model construction fails outside a
-  booted provider, not just database access). `SettleOnChainPayment`,
-  `ConvertToAssetUnits`, `ValidatePaymentPayload`, and `ValidateCryptoConfig`
-  (all pure logic, no Eloquent) are unit tested.
-- x402 agent flow → cart/order mapping (previously open) is resolved: the
-  consuming app builds/prices the `Cart` via its own product API, then binds
-  it to the `{cart}` route parameter on an x402-protected checkout-completion
-  route. `X402PaymentMiddleware` and `CryptoPaymentType` both settle through
-  `AuthorizeCryptoPayment`, so there's one code path for "cart becomes
-  order," not two. What's still unresolved: whether a Lunar app has a public
-  cart-building API at all by default (it doesn't ship one — that's a
-  storefront/headless-API concern), so this middleware assumes the consuming
-  app already has one.
+- **Refunds are not implemented.** x402/EIP-3009 is a pull-payment model —
+  there's no "reverse this charge" call on the facilitator. A refund means
+  the *merchant's own wallet* signing and broadcasting a fresh outbound
+  transfer back to the payer, which means this package would need to
+  custody a merchant signing key — a materially different (and
+  security-sensitive) scope than accepting payments. `CryptoPaymentType::refund()`
+  fails gracefully (`PaymentRefund(success: false, ...)`, not an exception)
+  rather than pretending to support it. Refund manually via your payee
+  wallet in the interim.
+- **CDP-authenticated facilitator isn't wired up.** Coinbase's mainnet
+  facilitator needs signed (CDP API key/secret) requests; that signing
+  isn't implemented, so `coinbase_cdp` in `facilitator_order` throws
+  `FacilitatorNotSupportedException` rather than silently failing.
+- **No payee (`pay_to`) address-change protection.** `ValidateCryptoConfig`
+  catches an asset/network mismatch at boot, but nothing guards against a
+  compromised `.env`/deploy pipeline silently redirecting settlements to a
+  different wallet — unlike our sibling `agentic-pay-woocommerce` package's
+  `PayeeAddressChangeGuard` (explicit re-confirmation before a payee change
+  takes effect).
+- x402 assumes the consuming app already has its own cart-building API —
+  Lunar doesn't ship one by default (that's a storefront/headless-API
+  concern), so an x402-protected route needs a `Cart` to bind to.
 
 ## Prior art / lessons folded in
 
@@ -147,24 +196,55 @@ A cross-repo edge-case audit (2026-08-26, see
 caught the same major/minor-unit mismatch that financedistrict-platform hit
 in production (Saleor PR #34) — this package's order total was being sent to
 the facilitator without converting from the store currency's minor unit to
-the asset's atomic unit. Fixed by `ConvertToAssetUnits`.
-
-The same audit filed 4 more hardening issues, addressed here:
+the asset's atomic unit. Fixed by `ConvertToAssetUnits`. The same audit
+filed 4 more hardening issues, all addressed:
 [#4](https://github.com/wakqasahmed/lunar-crypto-payments/issues/4) facilitator
 response cross-validation, [#5](https://github.com/wakqasahmed/lunar-crypto-payments/issues/5)
 payload validation, [#6](https://github.com/wakqasahmed/lunar-crypto-payments/issues/6)
 x402 rate limiting, [#7](https://github.com/wakqasahmed/lunar-crypto-payments/issues/7)
 network/asset config sanity check (payee-change protection from the same
-issue is still open, see above), and [#8](https://github.com/wakqasahmed/lunar-crypto-payments/issues/8)
-order-total drift — now caught by `ValidatePaymentPayload` since
-requirements are rebuilt fresh from the order's current total on every
-attempt, not cached from an earlier quote.
+issue is still open — see [Known limitations](#known-limitations)), and
+[#8](https://github.com/wakqasahmed/lunar-crypto-payments/issues/8)
+order-total drift.
 
 ## Testing
 
-```
+```bash
 composer install
 vendor/bin/pest
+```
+
+`tests/Unit` covers pure-logic Actions (no Eloquent). `tests/Feature`
+boots a real Lunar application against an in-memory SQLite database — a
+real `Currency`/`Channel`/`Product`/`ProductVariant`/`Price`/`Cart` graph,
+real HTTP requests through `X402PaymentMiddleware`, a real
+`CryptoPaymentType::authorize()` call, a real placed `Order`. Also covers:
+the retry/idempotency path, the concurrent-request lock, the refund
+graceful-failure path, and the exact signed-vs-echoed-amount bypass a
+cold-start review caught (see above).
+
+**What these tests do *not* prove:** cryptographic signature verification.
+Every test payload's `signature` is an opaque placeholder string —
+`ValidatePaymentPayload` only checks it's a non-empty string, and the
+facilitator (the only party that actually verifies an EIP-712 signature
+against the signer address) is mocked throughout. This package never
+verifies a signature itself — that's delegated entirely to the facilitator,
+by design (see `Actions\SettleOnChainPayment`). What's tested is everything
+*this package* is responsible for: pricing, request/response validation,
+idempotency, and finalization — not the facilitator's own cryptography.
+
+Only the HTTP calls are mocked; everything else — including the extensions
+`lunarphp/core` itself needs (`bcmath`, `intl`, `exif`) — runs for real. CI
+(`.github/workflows/tests.yml`) installs them via `shivammathur/setup-php`.
+If you don't have those extensions locally, a disposable container works
+just as well:
+
+```bash
+docker run --rm -v "$(pwd)":/app -w /app php:8.2-cli bash -c \
+  "apt-get update && apt-get install -y libicu-dev libzip-dev git unzip && \
+   docker-php-ext-install bcmath intl exif && \
+   curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer && \
+   composer install --no-interaction && vendor/bin/pest"
 ```
 
 ## License

@@ -49,8 +49,17 @@ class CryptoPaymentType extends AbstractPayment
 
     public function refund(TransactionContract $transaction, int $amount = 0, $notes = null): PaymentRefund
     {
-        // Requires a separate outbound on-chain transfer back to the payer's
-        // wallet — not yet sketched.
-        throw new \RuntimeException('Not yet implemented — spike stub.');
+        // Unlike a card payment, there's no "reverse this charge" call to
+        // make — refunding means the merchant's own wallet signing and
+        // broadcasting a new outbound transfer back to the payer. That's a
+        // different capability (custody of a merchant signing key) than
+        // this package currently has any reason to hold, so this fails
+        // gracefully rather than crashing whatever's calling it (e.g. an
+        // admin panel refund action) — a real exception here would surface
+        // as an unhandled 500, not a clear "can't do that yet".
+        return new PaymentRefund(
+            success: false,
+            message: 'Crypto refunds are not yet supported — refund manually via the configured payee wallet.',
+        );
     }
 }

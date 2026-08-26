@@ -2,6 +2,8 @@
 
 namespace Lunar\CryptoPayments\Actions;
 
+use Illuminate\Contracts\Cache\LockTimeoutException;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Lunar\CryptoPayments\DataTransferObjects\CryptoAuthorizationResult;
 use Lunar\CryptoPayments\Models\CryptoSettlement;
@@ -49,33 +51,66 @@ class AuthorizeCryptoPayment
         }
 
         if (! $settlement) {
-            $requirements = $this->buildRequirements->execute($order->total, $config);
+            // A sequential retry is safe via the check above, but two
+            // genuinely concurrent requests for the same cart would both
+            // pass that check before either writes — and, worse, both
+            // settle on-chain independently before either record exists
+            // locally. The lock has to wrap the settle call itself, not
+            // just the DB write after it.
+            $lock = Cache::lock("lunar-crypto-settlement:{$order->cart_id}", 30);
 
-            if ($error = $this->validatePayload->execute($payload, $requirements)) {
-                return new CryptoAuthorizationResult(success: false, order: $order, message: $error);
+            try {
+                $lock->block(5);
+            } catch (LockTimeoutException) {
+                return new CryptoAuthorizationResult(success: false, order: $order, message: 'Another payment attempt for this cart is already in progress.');
             }
 
-            $result = $this->settle->execute($payload, $requirements);
+            try {
+                // Re-check now that we hold the lock: another request may
+                // have settled while we were waiting for it.
+                $settlement = CryptoSettlement::where('cart_id', $order->cart_id)->latest()->first();
 
-            if (! $result->success) {
-                return new CryptoAuthorizationResult(success: false, order: $order, message: $result->message);
+                if ($settlement?->isRecorded()) {
+                    return new CryptoAuthorizationResult(success: true, order: $order);
+                }
+
+                if (! $settlement) {
+                    $requirements = $this->buildRequirements->execute($order->total, $config);
+
+                    if ($error = $this->validatePayload->execute($payload, $requirements)) {
+                        return new CryptoAuthorizationResult(success: false, order: $order, message: $error);
+                    }
+
+                    $result = $this->settle->execute($payload, $requirements);
+
+                    if (! $result->success) {
+                        return new CryptoAuthorizationResult(success: false, order: $order, message: $result->message);
+                    }
+
+                    // Written the instant settlement is confirmed — before
+                    // the order writes below, which can still fail. If they
+                    // do, this row is the proof funds already moved, and
+                    // the next attempt resumes from here instead of
+                    // settling again. amount is the order's total in the
+                    // STORE currency's minor unit — not the settled asset's
+                    // atomic-unit amount, which is a different scale
+                    // entirely (see ConvertToAssetUnits) and would corrupt
+                    // this audit trail if used directly.
+                    $settlement = CryptoSettlement::create([
+                        'cart_id' => $order->cart_id,
+                        'order_id' => $order->id,
+                        'tx_hash' => $result->txHash,
+                        'network' => $requirements['network'],
+                        'asset' => $requirements['asset'],
+                        'amount' => $order->total->value,
+                        'payer' => $result->payer,
+                        'facilitator' => $result->facilitator,
+                        'status' => 'settled',
+                    ]);
+                }
+            } finally {
+                $lock->release();
             }
-
-            // Written the instant settlement is confirmed — before the order
-            // writes below, which can still fail. If they do, this row is
-            // the proof funds already moved, and the next attempt resumes
-            // from here instead of settling again.
-            $settlement = CryptoSettlement::create([
-                'cart_id' => $order->cart_id,
-                'order_id' => $order->id,
-                'tx_hash' => $result->txHash,
-                'network' => $requirements['network'],
-                'asset' => $requirements['asset'],
-                'amount' => $result->settledAmount,
-                'payer' => $result->payer,
-                'facilitator' => $result->facilitator,
-                'status' => 'settled',
-            ]);
         }
 
         try {
@@ -87,6 +122,16 @@ class AuthorizeCryptoPayment
                     'amount' => $settlement->amount,
                     'reference' => $settlement->tx_hash,
                     'status' => 'settled',
+                    // Lunar's transactions table is card-payment-shaped
+                    // (card_type/last_four are NOT NULL in the final
+                    // migrated schema — verified empirically; an earlier
+                    // migration makes last_four nullable but a later one
+                    // resets it via ->change() without ->nullable()) even
+                    // though the table is meant to be driver-agnostic —
+                    // there's no card here, so this records what actually
+                    // authorized the charge instead.
+                    'card_type' => 'crypto',
+                    'last_four' => '',
                 ]);
 
                 $order->update(['placed_at' => now()]);
