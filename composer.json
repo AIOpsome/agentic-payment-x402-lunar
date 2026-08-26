@@ -11,8 +11,7 @@
   ],
   "require": {
     "php": "^8.2",
-    "lunarphp/core": "^1.0",
-    "web3p/web3.php": "^0.4"
+    "lunarphp/core": "^1.0"
   },
   "require-dev": {
     "orchestra/testbench": "^9.0",
