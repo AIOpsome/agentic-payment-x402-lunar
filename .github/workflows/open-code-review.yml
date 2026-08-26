@@ -22,7 +22,7 @@ jobs:
   open-code-review:
     if: github.event.pull_request.user.login == 'wakqasahmed'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Resolve OCR model (free model first, paid fallback on quota/outage)
         id: ocr_model
@@ -66,6 +66,6 @@ jobs:
           llm_auth_token: ${{ secrets.OCR_LLM_AUTH_TOKEN }}
           llm_model: ${{ steps.ocr_model.outputs.model }}
           llm_use_anthropic: ${{ vars.OCR_USE_ANTHROPIC }}
-          llm_timeout: '300'
+          llm_timeout: '600'
           sticky_summary: 'true'
           incremental: 'true'
