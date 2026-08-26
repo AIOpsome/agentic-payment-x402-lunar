@@ -58,12 +58,14 @@ authenticated (signed) requests; that signing isn't implemented yet
   yet.
 - CDP-authenticated facilitator support (JWT request signing) if/when someone
   wants the mainnet Coinbase option instead of PayAI.
-- `CryptoPaymentType` has no integration test yet — it needs Lunar core's
-  Cart/Order factories and migrations, which aren't available outside the
-  monorepo's own test suite. `SettleOnChainPayment` and `CryptoSettlement`
-  are unit tested; the full `authorize()` flow (order creation, the
-  settle-then-record ordering, the retry/idempotency path) is not yet
-  exercised against a real database.
+- `CryptoPaymentType` and `CryptoSettlement` have no test coverage yet.
+  `BaseModel` (which `CryptoSettlement` extends) requires
+  `Lunar\Base\ModelManifestInterface`, which only exists once
+  `LunarServiceProvider` — and its own dependency chain (Blink, MediaLibrary,
+  ActivityLog, NestedSet, Converter, per how `lunarphp/stripe`'s own test
+  suite bootstraps it) — is registered, plus Cart/Order factories and
+  migrations that live only in the monorepo's internal test suite. Only
+  `SettleOnChainPayment` (pure HTTP, no Eloquent) is unit tested so far.
 
 ## Prior art / lessons folded in
 
