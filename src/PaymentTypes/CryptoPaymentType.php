@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\DB;
 use Lunar\Base\DataTransferObjects\PaymentAuthorize;
 use Lunar\Base\DataTransferObjects\PaymentCapture;
 use Lunar\Base\DataTransferObjects\PaymentRefund;
+use Lunar\CryptoPayments\Actions\ConvertToAssetUnits;
 use Lunar\CryptoPayments\Actions\SettleOnChainPayment;
 use Lunar\CryptoPayments\Models\CryptoSettlement;
 use Lunar\Exceptions\Carts\CartException;
@@ -107,10 +108,20 @@ class CryptoPaymentType extends AbstractPayment
 
     protected function buildPaymentRequirements(): array
     {
+        $total = $this->order->total;
+
+        $amount = (new ConvertToAssetUnits)->execute(
+            value: $total->value,
+            currencyDecimals: (int) $total->currency->decimal_places,
+            assetDecimals: (int) ($this->config['asset_decimals'] ?? config('lunar-crypto.asset_decimals', 6)),
+            currencyCode: $total->currency->code,
+            peggedCurrency: $this->config['pegged_currency'] ?? config('lunar-crypto.pegged_currency', 'USD'),
+        );
+
         return [
             'scheme' => 'exact',
             'network' => $this->config['network'] ?? config('lunar-crypto.network'),
-            'amount' => (string) $this->order->total->value,
+            'amount' => $amount,
             'asset' => $this->config['asset'] ?? config('lunar-crypto.asset'),
             'payTo' => $this->config['pay_to'] ?? config('lunar-crypto.pay_to'),
             'maxTimeoutSeconds' => 60,

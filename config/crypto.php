@@ -7,6 +7,17 @@ return [
     // ERC-20 token contract address (not a symbol) — USDC on the network above.
     'asset' => env('LUNAR_CRYPTO_ASSET', '0x833589fCD6eDb6e08f4c7C32D4f71b54bdA02913'),
 
+    // Decimal places the asset's atomic unit uses. USDC = 6. The order
+    // total (in the store currency's minor unit, e.g. cents) is rescaled to
+    // this before being sent to the facilitator — see ConvertToAssetUnits.
+    'asset_decimals' => env('LUNAR_CRYPTO_ASSET_DECIMALS', 6),
+
+    // The store currency this driver assumes is 1:1 with the asset (USD for
+    // USDC). No FX conversion is implemented — CryptoPaymentType refuses to
+    // build payment requirements for an order in any other currency, rather
+    // than silently mispricing it.
+    'pegged_currency' => env('LUNAR_CRYPTO_PEGGED_CURRENCY', 'USD'),
+
     'pay_to' => env('LUNAR_CRYPTO_PAY_TO'),
 
     // Facilitators verify + settle the signed EIP-3009 transfer (x402 protocol

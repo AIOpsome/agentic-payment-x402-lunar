@@ -30,6 +30,11 @@ Two entry points share one settlement core:
   writes that follow it. On-chain settlement can't be undone; if those writes
   fail, this row is the proof funds already moved, and a retried
   `authorize()` resumes from it instead of settling (and charging) again.
+- `Actions\ConvertToAssetUnits` — rescales the order total from the store
+  currency's minor unit (e.g. cents) to the asset's atomic unit (USDC = 6
+  decimals) before it's sent to the facilitator. Refuses (rather than
+  silently mispricing) if the store currency isn't the configured
+  `pegged_currency` — no FX conversion is implemented.
 
 ### Facilitators
 
@@ -76,6 +81,13 @@ portable here — different stack). Their merged
 (SAC-2) found that settling on-chain and then writing the order can silently
 lose the audit trail if the order write fails after money has already moved.
 `CryptoSettlement` exists specifically to avoid that class of bug here.
+
+A cross-repo edge-case audit (2026-08-26, see
+[#3](https://github.com/wakqasahmed/lunar-crypto-payments/issues/3)) also
+caught the same major/minor-unit mismatch that financedistrict-platform hit
+in production (Saleor PR #34) — this package's order total was being sent to
+the facilitator without converting from the store currency's minor unit to
+the asset's atomic unit. Fixed by `ConvertToAssetUnits`.
 
 ## Testing
 
