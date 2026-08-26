@@ -91,6 +91,35 @@ it('rejects a payload missing its signature', function () {
     expect($error)->toContain('missing its signature');
 });
 
+it('rejects a forged accepted block whose signed authorization value is actually lower (the bypass the audit found)', function () {
+    // accepted.* matches requirements exactly (an attacker can freely
+    // rewrite this unsigned block) but the wallet actually signed for a
+    // much smaller amount. Checking only accepted.* against itself would
+    // let this straight through — it's the signed authorization.value that
+    // has to be checked against requirements, not the echoed claim.
+    $payload = validPayload(['payload' => ['authorization' => ['value' => '1']]]);
+
+    $error = (new ValidatePaymentPayload)->execute($payload, validRequirements());
+
+    expect($error)->toContain('does not match the required amount');
+});
+
+it('rejects a signed authorization to a different recipient than required', function () {
+    $payload = validPayload(['payload' => ['authorization' => ['to' => '0xattacker']]]);
+
+    $error = (new ValidatePaymentPayload)->execute($payload, validRequirements());
+
+    expect($error)->toContain('does not match the required payee');
+});
+
+it('rejects a non-scalar value in the accepted block', function () {
+    $payload = validPayload(['accepted' => ['amount' => ['nested' => 'array']]]);
+
+    $error = (new ValidatePaymentPayload)->execute($payload, validRequirements());
+
+    expect($error)->toContain('accepted.amount');
+});
+
 it('rejects an oversized payload', function () {
     $payload = validPayload(['payload' => ['authorization' => ['nonce' => str_repeat('a', 20 * 1024)]]]);
 

@@ -65,7 +65,20 @@ requested, that's treated as a failed settlement, not a successful one.
 
 `X402PaymentMiddleware` rate-limits by requester IP
 (`lunar-crypto.x402.rate_limit`, default 30/minute) before doing anything
-that costs a facilitator round-trip.
+that costs a facilitator round-trip — including the initial 402 challenge
+itself, so that's not free to spam either. Caveat: `Request::ip()` is
+spoofable if the consuming app trusts all proxies (`TrustProxies` set to
+`*`) — that's an app-level trust-boundary decision this package can't make
+for you, so configure `TrustProxies` correctly if you're behind a load
+balancer.
+
+`Actions\ValidatePaymentPayload` checks the *signed* `authorization.value`/
+`.to` against requirements, not just the client-echoed `accepted.amount`/
+`.payTo` — a client rewriting the unsigned `accepted` block to match
+requirements would otherwise sail through a check that only compared
+`accepted.*` against itself, while having actually signed for a different
+amount or recipient. A cold-start review (2026-08-26) caught this in an
+earlier version of this validation.
 
 ### Facilitators
 

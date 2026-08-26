@@ -17,3 +17,9 @@ it('throws on a testnet asset configured for a mainnet network', function () {
 it('allows an unrecognized network through unchecked', function () {
     (new ValidateCryptoConfig)->execute('eip155:1', '0xanything');
 })->throwsNoExceptions();
+
+it('does not crash on missing config rather than taking down app boot', function () {
+    (new ValidateCryptoConfig)->execute(null, null);
+    (new ValidateCryptoConfig)->execute('eip155:8453', null);
+    (new ValidateCryptoConfig)->execute(null, '0x833589fCD6eDb6e08f4c7C32D4f71b54bdA02913');
+})->throwsNoExceptions();

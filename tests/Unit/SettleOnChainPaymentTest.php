@@ -81,7 +81,7 @@ it('falls through to the next facilitator when the first errors', function () {
     Http::fake([
         'facilitator.payai.network/*' => Http::response([], 500),
         'x402.org/facilitator/verify' => Http::response(['isValid' => true]),
-        'x402.org/facilitator/settle' => Http::response(['success' => true, 'transaction' => '0xfallback']),
+        'x402.org/facilitator/settle' => Http::response(['success' => true, 'transaction' => '0xfallback', 'network' => 'eip155:8453']),
     ]);
 
     $result = (new SettleOnChainPayment)->execute(samplePayload(), sampleRequirements());
@@ -96,6 +96,7 @@ it('rejects a settlement that reports a different amount than requested', functi
         'facilitator.payai.network/settle' => Http::response([
             'success' => true,
             'transaction' => '0xtxhash',
+            'network' => 'eip155:8453',
             'amount' => '999999',
         ]),
     ]);
@@ -113,6 +114,21 @@ it('rejects a settlement that reports a different network than requested', funct
             'success' => true,
             'transaction' => '0xtxhash',
             'network' => 'eip155:84532',
+        ]),
+    ]);
+
+    $result = (new SettleOnChainPayment)->execute(samplePayload(), sampleRequirements());
+
+    expect($result->success)->toBeFalse()
+        ->and($result->message)->toContain('different network');
+});
+
+it('rejects a settlement response missing the required network field', function () {
+    Http::fake([
+        'facilitator.payai.network/verify' => Http::response(['isValid' => true]),
+        'facilitator.payai.network/settle' => Http::response([
+            'success' => true,
+            'transaction' => '0xtxhash',
         ]),
     ]);
 

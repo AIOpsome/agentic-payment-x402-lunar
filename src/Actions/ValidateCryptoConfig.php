@@ -26,8 +26,17 @@ class ValidateCryptoConfig
     /**
      * @throws \RuntimeException  if the configured asset doesn't match a known-good address for the network.
      */
-    public function execute(string $network, string $asset): void
+    public function execute(?string $network, ?string $asset): void
     {
+        // Missing config entirely is a real problem, but not one to crash
+        // app boot over — it'll fail clearly at the first checkout attempt
+        // instead. Crashing boot here would take down the whole app (and
+        // artisan commands with it) over a config gap this check exists to
+        // catch a narrower class of mistake in, not enforce completeness.
+        if ($network === null || $asset === null) {
+            return;
+        }
+
         $known = self::KNOWN_USDC_ADDRESSES[$network] ?? null;
 
         if ($known === null) {

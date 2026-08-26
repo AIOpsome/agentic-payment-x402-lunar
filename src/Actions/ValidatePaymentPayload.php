@@ -6,9 +6,16 @@ namespace Lunar\CryptoPayments\Actions;
  * Shape/adversarial-input validation on a signed x402 PaymentPayload before
  * it's ever forwarded to a facilitator. Fails closed on anything malformed,
  * oversized, or that doesn't exactly match the requirements we computed
- * server-side — including the case where the payload's `accepted.amount`
- * reflects an order total that has since changed (quote-to-settlement
- * drift): a stale signed amount will never match a freshly recomputed one.
+ * server-side.
+ *
+ * Critically, this checks the SIGNED `payload.authorization.value`/`.to`
+ * against requirements, not just the unsigned, client-echoed
+ * `accepted.amount`/`.payTo` — a client can rewrite `accepted.*` to
+ * anything and still pass a check that only compares `accepted.*` against
+ * itself. It's the authorization fields the wallet actually signed (EIP-712)
+ * that a forged accepted block can't fake. This also closes
+ * quote-to-settlement drift: a stale signed value from before an order
+ * total changed won't match a freshly recomputed requirement.
  */
 class ValidatePaymentPayload
 {
@@ -30,7 +37,9 @@ class ValidatePaymentPayload
         }
 
         foreach (['scheme', 'network', 'asset', 'payTo', 'amount'] as $key) {
-            if (! array_key_exists($key, $accepted) || (string) $accepted[$key] !== (string) $requirements[$key]) {
+            $value = $accepted[$key] ?? null;
+
+            if (! is_scalar($value) || (string) $value !== (string) $requirements[$key]) {
                 return "Payment payload's accepted.{$key} does not match what was required.";
             }
         }
@@ -42,13 +51,24 @@ class ValidatePaymentPayload
         }
 
         foreach (['from', 'to', 'value', 'validAfter', 'validBefore', 'nonce'] as $key) {
-            if (! isset($authorization[$key]) || $authorization[$key] === '') {
+            if (! isset($authorization[$key]) || $authorization[$key] === '' || ! is_scalar($authorization[$key])) {
                 return "Payment payload's authorization is missing {$key}.";
             }
         }
 
         if (! ctype_digit((string) $authorization['value']) || (int) $authorization['value'] <= 0) {
             return 'Payment payload authorization value must be a positive integer.';
+        }
+
+        // The part that actually matters: what the wallet signed. accepted.*
+        // above is just the client's unsigned claim about what it's about
+        // to pay — checking it against itself proves nothing on its own.
+        if ((string) $authorization['value'] !== (string) $requirements['amount']) {
+            return 'Payment payload authorization value does not match the required amount.';
+        }
+
+        if (strcasecmp((string) $authorization['to'], (string) $requirements['payTo']) !== 0) {
+            return 'Payment payload authorization recipient does not match the required payee.';
         }
 
         if (empty($payload['payload']['signature']) || ! is_string($payload['payload']['signature'])) {
