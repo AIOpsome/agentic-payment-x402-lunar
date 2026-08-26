@@ -1,0 +1,48 @@
+{
+  "name": "wakqasahmed/lunar-crypto-payments",
+  "type": "project",
+  "description": "Crypto payment driver for Lunar (human wallet checkout + agent payments via x402).",
+  "keywords": ["lunarphp", "laravel", "ecommerce", "e-commerce", "headless", "store", "shop", "cart", "crypto", "usdc", "x402", "agentic-commerce"],
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "Wakqas Ahmed"
+    }
+  ],
+  "require": {
+    "php": "^8.2",
+    "lunarphp/core": "^1.0",
+    "web3p/web3.php": "^0.4"
+  },
+  "require-dev": {
+    "orchestra/testbench": "^9.0",
+    "pestphp/pest": "^2.0"
+  },
+  "autoload": {
+    "psr-4": {
+      "Lunar\\CryptoPayments\\": "src/"
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "Lunar\\CryptoPayments\\Tests\\": "tests/"
+    }
+  },
+  "extra": {
+    "lunar": {
+      "name": "Crypto Payments"
+    },
+    "laravel": {
+      "providers": [
+        "Lunar\\CryptoPayments\\CryptoPaymentsServiceProvider"
+      ]
+    }
+  },
+  "minimum-stability": "dev",
+  "prefer-stable": true,
+  "config": {
+    "allow-plugins": {
+      "pestphp/pest-plugin": true
+    }
+  }
+}
