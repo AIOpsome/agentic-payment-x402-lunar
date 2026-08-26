@@ -86,10 +86,42 @@ class SettleOnChainPayment
             return new SettlementResult(success: false, message: $settle['errorReason'] ?? 'Settlement failed');
         }
 
+        // Don't trust the facilitator's own numbers blindly — if it reports
+        // settling on a different network, or for a different amount, than
+        // we asked for (facilitator bug, or a compromised/MITM'd endpoint),
+        // that's not a payment we should treat as valid just because
+        // `success` was true. `amount` is optional per the x402 spec (falls
+        // back to what we requested); `network` is required — a facilitator
+        // omitting a required field is itself suspicious, so that fails
+        // closed rather than being skipped.
+        if (! isset($settle['network']) || ! is_scalar($settle['network']) || (string) $settle['network'] !== $paymentRequirements['network']) {
+            Log::error("Crypto payment facilitator [{$name}] settled on a different (or missing) network than requested — refusing to trust it.", [
+                'requested' => $paymentRequirements['network'],
+                'settled' => $settle['network'] ?? null,
+                'transaction' => $settle['transaction'] ?? null,
+            ]);
+
+            return new SettlementResult(success: false, message: 'Facilitator settled on a different network than requested.');
+        }
+
+        $settledAmount = isset($settle['amount']) && is_scalar($settle['amount'])
+            ? (string) $settle['amount']
+            : $paymentRequirements['amount'];
+
+        if ($settledAmount !== $paymentRequirements['amount']) {
+            Log::error("Crypto payment facilitator [{$name}] settled a different amount than requested — refusing to trust it.", [
+                'requested' => $paymentRequirements['amount'],
+                'settled' => $settledAmount,
+                'transaction' => $settle['transaction'] ?? null,
+            ]);
+
+            return new SettlementResult(success: false, message: 'Facilitator settled a different amount than requested.');
+        }
+
         return new SettlementResult(
             success: true,
             txHash: $settle['transaction'] ?? null,
-            settledAmount: isset($settle['amount']) ? (int) $settle['amount'] : (int) $paymentRequirements['amount'],
+            settledAmount: (int) $settledAmount,
             message: null,
             payer: $settle['payer'] ?? null,
             facilitator: $name,

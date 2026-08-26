@@ -24,6 +24,7 @@ class AuthorizeCryptoPayment
 {
     public function __construct(
         protected BuildPaymentRequirements $buildRequirements,
+        protected ValidatePaymentPayload $validatePayload,
         protected SettleOnChainPayment $settle,
     ) {}
 
@@ -49,6 +50,10 @@ class AuthorizeCryptoPayment
 
         if (! $settlement) {
             $requirements = $this->buildRequirements->execute($order->total, $config);
+
+            if ($error = $this->validatePayload->execute($payload, $requirements)) {
+                return new CryptoAuthorizationResult(success: false, order: $order, message: $error);
+            }
 
             $result = $this->settle->execute($payload, $requirements);
 

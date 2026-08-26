@@ -43,11 +43,42 @@ placed order — via one shared pipeline:
   currency's minor unit (e.g. cents) to the asset's atomic unit (USDC = 6
   decimals). Refuses (rather than silently mispricing) if the store currency
   isn't the configured `pegged_currency` — no FX conversion is implemented.
+- `Actions\ValidatePaymentPayload` — checked before a payload ever reaches a
+  facilitator: size cap, required fields, and (critically) that the
+  payload's own `accepted.*` exactly matches the `PaymentRequirements` we
+  just computed. Since requirements are always rebuilt fresh from the
+  order's *current* total, this also catches quote-to-settlement drift — a
+  stale signed amount from before an order total changed will never match.
+- `Actions\ValidateCryptoConfig` — run at service-provider boot: cross-checks
+  the configured asset address against the configured network for the
+  networks it knows about, catching a testnet/mainnet mismatch at deploy
+  time instead of at the first checkout.
 - `Models\CryptoSettlement` — an audit-trail row written the instant a
   facilitator confirms settlement, before the order transaction/`placed_at`
   writes that follow it. On-chain settlement can't be undone; if those writes
   fail, this row is the proof funds already moved, and a retried attempt
   resumes from it instead of settling (and charging) again.
+
+`SettleOnChainPayment` also doesn't trust a facilitator's `/settle` response
+blindly — if it reports a different amount or network than what was
+requested, that's treated as a failed settlement, not a successful one.
+
+`X402PaymentMiddleware` rate-limits by requester IP
+(`lunar-crypto.x402.rate_limit`, default 30/minute) before doing anything
+that costs a facilitator round-trip — including the initial 402 challenge
+itself, so that's not free to spam either. Caveat: `Request::ip()` is
+spoofable if the consuming app trusts all proxies (`TrustProxies` set to
+`*`) — that's an app-level trust-boundary decision this package can't make
+for you, so configure `TrustProxies` correctly if you're behind a load
+balancer.
+
+`Actions\ValidatePaymentPayload` checks the *signed* `authorization.value`/
+`.to` against requirements, not just the client-echoed `accepted.amount`/
+`.payTo` — a client rewriting the unsigned `accepted` block to match
+requirements would otherwise sail through a check that only compared
+`accepted.*` against itself, while having actually signed for a different
+amount or recipient. A cold-start review (2026-08-26) caught this in an
+earlier version of this validation.
 
 ### Facilitators
 
@@ -74,6 +105,12 @@ authenticated (signed) requests; that signing isn't implemented yet
   yet.
 - CDP-authenticated facilitator support (JWT request signing) if/when someone
   wants the mainnet Coinbase option instead of PayAI.
+- Payee (`pay_to`) address change protection: unlike our sibling
+  `agentic-pay-woocommerce` repo's `PayeeAddressChangeGuard` (explicit
+  re-confirmation before a payee wallet change takes effect), this package
+  currently has no guard against a compromised `.env`/deploy pipeline
+  silently redirecting settlements to a different wallet. `ValidateCryptoConfig`
+  only catches an asset/network mismatch, not a `pay_to` change.
 - `CryptoPaymentType`, `AuthorizeCryptoPayment`, `BuildPaymentRequirements`,
   and `CryptoSettlement` have no test coverage yet — anything touching a
   Lunar `Cart`/`Order`/`Price`/`Currency` model needs `LunarServiceProvider`
@@ -82,8 +119,9 @@ authenticated (signed) requests; that signing isn't implemented yet
   it) — registered, plus Cart/Order factories and migrations that live only
   in the monorepo's internal test suite (`Lunar\Base\ModelManifestInterface`
   isn't bound without it — every Lunar model construction fails outside a
-  booted provider, not just database access). Only `SettleOnChainPayment` and
-  `ConvertToAssetUnits` (pure logic, no Eloquent) are unit tested so far.
+  booted provider, not just database access). `SettleOnChainPayment`,
+  `ConvertToAssetUnits`, `ValidatePaymentPayload`, and `ValidateCryptoConfig`
+  (all pure logic, no Eloquent) are unit tested.
 - x402 agent flow → cart/order mapping (previously open) is resolved: the
   consuming app builds/prices the `Cart` via its own product API, then binds
   it to the `{cart}` route parameter on an x402-protected checkout-completion
@@ -110,6 +148,17 @@ caught the same major/minor-unit mismatch that financedistrict-platform hit
 in production (Saleor PR #34) — this package's order total was being sent to
 the facilitator without converting from the store currency's minor unit to
 the asset's atomic unit. Fixed by `ConvertToAssetUnits`.
+
+The same audit filed 4 more hardening issues, addressed here:
+[#4](https://github.com/wakqasahmed/lunar-crypto-payments/issues/4) facilitator
+response cross-validation, [#5](https://github.com/wakqasahmed/lunar-crypto-payments/issues/5)
+payload validation, [#6](https://github.com/wakqasahmed/lunar-crypto-payments/issues/6)
+x402 rate limiting, [#7](https://github.com/wakqasahmed/lunar-crypto-payments/issues/7)
+network/asset config sanity check (payee-change protection from the same
+issue is still open, see above), and [#8](https://github.com/wakqasahmed/lunar-crypto-payments/issues/8)
+order-total drift — now caught by `ValidatePaymentPayload` since
+requirements are rebuilt fresh from the order's current total on every
+attempt, not cached from an earlier quote.
 
 ## Testing
 
