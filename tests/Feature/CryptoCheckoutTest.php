@@ -3,51 +3,6 @@
 use Illuminate\Support\Facades\Http;
 use Lunar\CryptoPayments\PaymentTypes\CryptoPaymentType;
 use Lunar\Models\Cart;
-use Lunar\Models\CartAddress;
-use Lunar\Models\CartLine;
-use Lunar\Models\Channel;
-use Lunar\Models\Currency;
-use Lunar\Models\Language;
-use Lunar\Models\Price;
-use Lunar\Models\ProductVariant;
-
-function makePricedCart(int $unitPrice = 1000): Cart
-{
-    Language::factory()->create(['default' => true]);
-    $currency = Currency::factory()->create(['code' => 'USD', 'decimal_places' => 2, 'default' => true]);
-    $channel = Channel::factory()->create(['default' => true]);
-
-    // Not shippable, to keep this test focused on the payment flow rather
-    // than also having to set up a ShippingOption/shipping address.
-    $variant = ProductVariant::factory()->create(['shippable' => false]);
-
-    Price::factory()->create([
-        'priceable_type' => ProductVariant::morphName(),
-        'priceable_id' => $variant->id,
-        'currency_id' => $currency->id,
-        'price' => $unitPrice,
-        'min_quantity' => 1,
-    ]);
-
-    $cart = Cart::factory()->create([
-        'currency_id' => $currency->id,
-        'channel_id' => $channel->id,
-    ]);
-
-    CartLine::factory()->create([
-        'cart_id' => $cart->id,
-        'purchasable_type' => ProductVariant::morphName(),
-        'purchasable_id' => $variant->id,
-        'quantity' => 1,
-    ]);
-
-    CartAddress::factory()->create([
-        'cart_id' => $cart->id,
-        'type' => 'billing',
-    ]);
-
-    return $cart->calculate()->fresh();
-}
 
 beforeEach(function () {
     config()->set('lunar-crypto.pay_to', '0xmerchant');
@@ -109,14 +64,24 @@ it('settles a real cart end to end into a placed order', function () {
 
     $order = \Lunar\Models\Order::find($result->orderId);
 
-    expect($order->placed_at)->not->toBeNull()
-        ->and($order->transactions()->where('driver', 'crypto')->exists())->toBeTrue();
+    expect($order->placed_at)->not->toBeNull();
+
+    $transaction = $order->transactions()->where('driver', 'crypto')->first();
+
+    expect($transaction)->not->toBeNull()
+        // Regression guard: the recorded transaction amount must be in the
+        // store currency's minor unit (matching the order total), NOT the
+        // asset's atomic-unit settled amount (10000 x the order total here)
+        // — those are a different scale entirely.
+        ->and($transaction->amount->value)->toBe($order->total->value)
+        ->and($transaction->card_type)->toBe('crypto');
 
     $settlement = \Lunar\CryptoPayments\Models\CryptoSettlement::where('order_id', $order->id)->first();
 
     expect($settlement)->not->toBeNull()
         ->and($settlement->status)->toBe('recorded')
-        ->and($settlement->tx_hash)->toBe('0xrealtxhash');
+        ->and($settlement->tx_hash)->toBe('0xrealtxhash')
+        ->and($settlement->amount)->toBe($order->total->value);
 });
 
 it('does not settle twice on a retried authorize call', function () {
@@ -210,4 +175,76 @@ it('rejects a payload whose signed amount is lower than the cart total (fraud at
         ->and($result->message)->toContain('does not match the required amount');
 
     Http::assertNothingSent();
+});
+
+it('refuses to settle a cart while another attempt for it holds the lock', function () {
+    $cart = makePricedCart(1000);
+    $requiredAmount = (string) ($cart->total->value * 10000);
+
+    $payload = [
+        'x402Version' => 2,
+        'accepted' => [
+            'scheme' => 'exact',
+            'network' => 'eip155:8453',
+            'amount' => $requiredAmount,
+            'asset' => '0x833589fCD6eDb6e08f4c7C32D4f71b54bdA02913',
+            'payTo' => '0xmerchant',
+            'maxTimeoutSeconds' => 60,
+        ],
+        'payload' => [
+            'signature' => '0xsig',
+            'authorization' => [
+                'from' => '0xpayer',
+                'to' => '0xmerchant',
+                'value' => $requiredAmount,
+                'validAfter' => '1740672089',
+                'validBefore' => '1999999999',
+                'nonce' => '0xnonce',
+            ],
+        ],
+    ];
+
+    Http::fake(); // holding the lock should stop this from ever being reached
+
+    // Simulates a second concurrent request arriving mid-settlement: the
+    // lock is already held by "someone else" for this cart when authorize()
+    // is called.
+    $lock = \Illuminate\Support\Facades\Cache::lock("lunar-crypto-settlement:{$cart->id}", 30);
+    $lock->get();
+
+    try {
+        $result = app(CryptoPaymentType::class)
+            ->cart($cart)
+            ->withData(['payment_payload' => $payload])
+            ->authorize();
+
+        expect($result->success)->toBeFalse()
+            ->and($result->message)->toContain('already in progress');
+
+        Http::assertNothingSent();
+    } finally {
+        $lock->release();
+    }
+})->group('slow'); // blocks for real, waiting out the lock's 5s acquire timeout
+
+it('fails gracefully instead of throwing when a refund is attempted', function () {
+    $cart = makePricedCart(1000);
+    $order = $cart->createOrder();
+
+    $transaction = $order->transactions()->create([
+        'success' => true,
+        'type' => 'capture',
+        'driver' => 'crypto',
+        'amount' => $order->total->value,
+        'reference' => '0xsometx',
+        'status' => 'settled',
+        'card_type' => 'crypto',
+        'last_four' => '',
+    ]);
+
+    $result = app(CryptoPaymentType::class)->refund($transaction, $order->total->value);
+
+    expect($result)->toBeInstanceOf(\Lunar\Base\DataTransferObjects\PaymentRefund::class)
+        ->and($result->success)->toBeFalse()
+        ->and($result->message)->toContain('not yet supported');
 });

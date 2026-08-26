@@ -217,9 +217,24 @@ vendor/bin/pest
 `tests/Unit` covers pure-logic Actions (no Eloquent). `tests/Feature`
 boots a real Lunar application against an in-memory SQLite database — a
 real `Currency`/`Channel`/`Product`/`ProductVariant`/`Price`/`Cart` graph,
-a real `CryptoPaymentType::authorize()` call, a real placed `Order` —
-with only the facilitator HTTP calls mocked. It requires the `bcmath`,
-`intl`, and `exif` extensions `lunarphp/core` itself needs; CI
+real HTTP requests through `X402PaymentMiddleware`, a real
+`CryptoPaymentType::authorize()` call, a real placed `Order`. Also covers:
+the retry/idempotency path, the concurrent-request lock, the refund
+graceful-failure path, and the exact signed-vs-echoed-amount bypass a
+cold-start review caught (see above).
+
+**What these tests do *not* prove:** cryptographic signature verification.
+Every test payload's `signature` is an opaque placeholder string —
+`ValidatePaymentPayload` only checks it's a non-empty string, and the
+facilitator (the only party that actually verifies an EIP-712 signature
+against the signer address) is mocked throughout. This package never
+verifies a signature itself — that's delegated entirely to the facilitator,
+by design (see `Actions\SettleOnChainPayment`). What's tested is everything
+*this package* is responsible for: pricing, request/response validation,
+idempotency, and finalization — not the facilitator's own cryptography.
+
+Only the HTTP calls are mocked; everything else — including the extensions
+`lunarphp/core` itself needs (`bcmath`, `intl`, `exif`) — runs for real. CI
 (`.github/workflows/tests.yml`) installs them via `shivammathur/setup-php`.
 If you don't have those extensions locally, a disposable container works
 just as well:
