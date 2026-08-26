@@ -87,6 +87,12 @@ class AuthorizeCryptoPayment
                     'amount' => $settlement->amount,
                     'reference' => $settlement->tx_hash,
                     'status' => 'settled',
+                    // Lunar's transactions table is card-payment-shaped
+                    // (card_type/last_four are NOT NULL) even though it's
+                    // meant to be driver-agnostic — there's no card here,
+                    // so this records what actually authorized the charge.
+                    'card_type' => 'crypto',
+                    'last_four' => '',
                 ]);
 
                 $order->update(['placed_at' => now()]);
