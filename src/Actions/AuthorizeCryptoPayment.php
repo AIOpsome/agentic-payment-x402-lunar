@@ -6,6 +6,7 @@ use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Lunar\CryptoPayments\DataTransferObjects\CryptoAuthorizationResult;
+use Lunar\CryptoPayments\Exceptions\PayeeAddressChangedException;
 use Lunar\CryptoPayments\Models\CryptoSettlement;
 use Lunar\Exceptions\Carts\CartException;
 use Lunar\Exceptions\DisallowMultipleCartOrdersException;
@@ -28,9 +29,10 @@ class AuthorizeCryptoPayment
         protected BuildPaymentRequirements $buildRequirements,
         protected ValidatePaymentPayload $validatePayload,
         protected SettleOnChainPayment $settle,
+        protected GuardPayeeAddressChange $guardPayee,
     ) {}
 
-    public function execute(Cart $cart, array $payload, array $config = [], ?Order $order = null): CryptoAuthorizationResult
+    public function execute(Cart $cart, array $payload, array $config = [], ?Order $order = null, string $payeeKey = 'pay_to'): CryptoAuthorizationResult
     {
         if (! $order) {
             try {
@@ -38,6 +40,17 @@ class AuthorizeCryptoPayment
             } catch (DisallowMultipleCartOrdersException|CartException $e) {
                 return new CryptoAuthorizationResult(success: false, message: $e->getMessage());
             }
+        }
+
+        // Guards against a compromised/mistyped .env or deploy pipeline
+        // silently redirecting settlements to a different wallet — checked
+        // before anything else costs a facilitator round-trip. Same
+        // pay_to resolution BuildPaymentRequirements uses, so this guards
+        // the exact address that would actually be requested.
+        try {
+            $this->guardPayee->execute($payeeKey, $config['pay_to'] ?? config('lunar-crypto.pay_to'));
+        } catch (PayeeAddressChangedException $e) {
+            return new CryptoAuthorizationResult(success: false, order: $order, message: $e->getMessage());
         }
 
         // Idempotency guard: a prior attempt may have settled on-chain and

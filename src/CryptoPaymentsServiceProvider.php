@@ -4,6 +4,7 @@ namespace Lunar\CryptoPayments;
 
 use Illuminate\Support\ServiceProvider;
 use Lunar\CryptoPayments\Actions\ValidateCryptoConfig;
+use Lunar\CryptoPayments\Console\Commands\ConfirmPayeeAddress;
 use Lunar\CryptoPayments\PaymentTypes\CryptoPaymentType;
 use Lunar\CryptoPayments\X402\X402PaymentMiddleware;
 use Lunar\Facades\Payments;
@@ -39,6 +40,10 @@ class CryptoPaymentsServiceProvider extends ServiceProvider
 
         if (! config('lunar.database.disable_migrations', false)) {
             $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
+        }
+
+        if ($this->app->runningInConsole()) {
+            $this->commands([ConfirmPayeeAddress::class]);
         }
     }
 }

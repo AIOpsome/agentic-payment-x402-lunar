@@ -77,7 +77,7 @@ class X402PaymentMiddleware
             return response()->json(['error' => 'Malformed X-PAYMENT header'], 402);
         }
 
-        $result = $this->authorizeCryptoPayment->execute($cart, $payload, config('lunar-crypto.x402'));
+        $result = $this->authorizeCryptoPayment->execute($cart, $payload, config('lunar-crypto.x402'), null, 'x402_pay_to');
 
         if (! $result->success) {
             return response()->json(['error' => $result->message], 402);

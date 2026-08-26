@@ -108,6 +108,20 @@ placed order — via one shared pipeline:
   human-checkout and x402 networks) for the networks it knows about,
   catching a testnet/mainnet mismatch at deploy time instead of at the first
   checkout.
+- `Actions\GuardPayeeAddressChange` — run on every `authorize()`/x402
+  attempt: compares the configured `pay_to` (checked independently for
+  human checkout and x402) against the last-confirmed address recorded in
+  `crypto_payee_configs`. A first-ever value is recorded and allowed
+  through; an unchanged value is a no-op; a *changed* value is logged
+  loudly (`Log::critical`) and fails the attempt closed with
+  `PayeeAddressChangedException` — settlement stays blocked until an
+  operator explicitly re-confirms the new address with
+  `php artisan lunar-crypto:confirm-payee {pay_to|x402_pay_to}`. Guards
+  against a compromised or mistyped `.env`/deploy pipeline silently
+  redirecting future settlements to a different wallet — mirrors our
+  sibling `agentic-pay-woocommerce` package's `PayeeAddressChangeGuard`,
+  adapted for a package with no settings UI to gate a confirmation
+  checkbox on.
 - `Models\CryptoSettlement` — an audit-trail row written the instant a
   facilitator confirms settlement, before the order transaction/`placed_at`
   writes that follow it. On-chain settlement can't be undone; if those writes
@@ -171,12 +185,6 @@ authenticated (signed) requests; that signing isn't implemented yet
   facilitator needs signed (CDP API key/secret) requests; that signing
   isn't implemented, so `coinbase_cdp` in `facilitator_order` throws
   `FacilitatorNotSupportedException` rather than silently failing.
-- **No payee (`pay_to`) address-change protection.** `ValidateCryptoConfig`
-  catches an asset/network mismatch at boot, but nothing guards against a
-  compromised `.env`/deploy pipeline silently redirecting settlements to a
-  different wallet — unlike our sibling `agentic-pay-woocommerce` package's
-  `PayeeAddressChangeGuard` (explicit re-confirmation before a payee change
-  takes effect).
 - x402 assumes the consuming app already has its own cart-building API —
   Lunar doesn't ship one by default (that's a storefront/headless-API
   concern), so an x402-protected route needs a `Cart` to bind to.
