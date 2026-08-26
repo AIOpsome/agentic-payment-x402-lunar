@@ -55,7 +55,7 @@ it('ignores a null configured address', function () {
 it('blocks settlement end to end through human checkout when pay_to has changed since it was last confirmed', function () {
     config()->set('lunar-crypto.pay_to', '0xattacker');
     config()->set('lunar-crypto.network', 'eip155:8453');
-    config()->set('lunar-crypto.asset', '0x833589fCD6eDb6e08f4c7C32D4f71b54bdA02913');
+    config()->set('lunar-crypto.asset', '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913');
     config()->set('lunar-crypto.pegged_currency', 'USD');
     config()->set('lunar-crypto.facilitators.payai.url', 'https://facilitator.payai.network');
     config()->set('lunar-crypto.facilitator_order', ['payai']);
@@ -73,7 +73,7 @@ it('blocks settlement end to end through human checkout when pay_to has changed 
             'scheme' => 'exact',
             'network' => 'eip155:8453',
             'amount' => $requiredAmount,
-            'asset' => '0x833589fCD6eDb6e08f4c7C32D4f71b54bdA02913',
+            'asset' => '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
             'payTo' => '0xattacker',
             'maxTimeoutSeconds' => 60,
         ],
@@ -100,7 +100,9 @@ it('blocks settlement end to end through human checkout when pay_to has changed 
         ->authorize();
 
     expect($result->success)->toBeFalse()
-        ->and($result->message)->toContain('changed');
+        ->and($result->message)->toContain('operator re-confirmation')
+        ->and($result->message)->not->toContain('0xattacker')
+        ->and($result->message)->not->toContain('0xmerchant');
 
     Http::assertNothingSent();
 
@@ -110,7 +112,7 @@ it('blocks settlement end to end through human checkout when pay_to has changed 
 
 it('blocks settlement end to end through the x402 middleware when x402_pay_to has changed since it was last confirmed', function () {
     config()->set('lunar-crypto.network', 'eip155:8453');
-    config()->set('lunar-crypto.asset', '0x833589fCD6eDb6e08f4c7C32D4f71b54bdA02913');
+    config()->set('lunar-crypto.asset', '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913');
     config()->set('lunar-crypto.pegged_currency', 'USD');
     config()->set('lunar-crypto.facilitators.payai.url', 'https://facilitator.payai.network');
     config()->set('lunar-crypto.facilitator_order', ['payai']);
@@ -133,7 +135,7 @@ it('blocks settlement end to end through the x402 middleware when x402_pay_to ha
             'scheme' => 'exact',
             'network' => 'eip155:8453',
             'amount' => $requiredAmount,
-            'asset' => '0x833589fCD6eDb6e08f4c7C32D4f71b54bdA02913',
+            'asset' => '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
             'payTo' => '0xattacker',
             'maxTimeoutSeconds' => 60,
         ],
@@ -156,7 +158,11 @@ it('blocks settlement end to end through the x402 middleware when x402_pay_to ha
 
     $response = $this->postJson("/x402/carts/{$cart->id}/checkout", [], ['X-PAYMENT' => $header]);
 
-    $response->assertStatus(402);
+    // Not 402: the guard now blocks before the 402 challenge (containing
+    // payTo) is ever built, so a changed/unconfirmed payee never gets a
+    // payment challenge advertised for it at all.
+    $response->assertStatus(503)
+        ->assertJson(['error' => 'Payment configuration requires operator re-confirmation. Contact the store operator.']);
 
     Http::assertNothingSent();
 

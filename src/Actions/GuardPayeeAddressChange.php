@@ -27,14 +27,20 @@ class GuardPayeeAddressChange
             return;
         }
 
-        $record = CryptoPayeeConfig::where('key', $key)->first();
+        // firstOrCreate rather than a check-then-insert: two genuinely
+        // concurrent first-ever requests for the same key would otherwise
+        // both miss a plain where()->first() and both attempt to insert,
+        // and the second would surface an uncaught unique-constraint
+        // QueryException instead of a clean pass-through.
+        $record = CryptoPayeeConfig::firstOrCreate(
+            ['key' => $key],
+            ['address' => $configuredAddress]
+        );
 
         // First time this key has ever been seen — nothing to protect yet.
         // Record it as the confirmed baseline rather than blocking a fresh
         // install on a check with nothing to compare against.
-        if (! $record) {
-            CryptoPayeeConfig::create(['key' => $key, 'address' => $configuredAddress]);
-
+        if ($record->wasRecentlyCreated) {
             return;
         }
 

@@ -7,6 +7,9 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
 use Lunar\CryptoPayments\Actions\AuthorizeCryptoPayment;
 use Lunar\CryptoPayments\Actions\BuildPaymentRequirements;
+use Lunar\CryptoPayments\Actions\GuardPayeeAddressChange;
+use Lunar\CryptoPayments\Actions\ResolvePayeeAddress;
+use Lunar\CryptoPayments\Exceptions\PayeeAddressChangedException;
 use Lunar\Models\Contracts\Cart;
 
 /**
@@ -29,6 +32,8 @@ class X402PaymentMiddleware
     public function __construct(
         protected BuildPaymentRequirements $buildRequirements,
         protected AuthorizeCryptoPayment $authorizeCryptoPayment,
+        protected GuardPayeeAddressChange $guardPayee,
+        protected ResolvePayeeAddress $resolvePayee,
     ) {}
 
     public function handle(Request $request, Closure $next)
@@ -58,7 +63,28 @@ class X402PaymentMiddleware
             return response()->json(['error' => 'Cart has not been priced yet'], 422);
         }
 
-        $requirements = $this->buildRequirements->execute($cart->total, config('lunar-crypto.x402'));
+        // Must run before ANY payTo is built or advertised — even the 402
+        // challenge itself. An x402 payload is a broadcastable EIP-3009
+        // signature: if a compromised/unconfirmed address ever appears in
+        // the challenge's `accepts[].payTo`, an agent can sign against it
+        // and settle directly on-chain (or via another facilitator),
+        // completely bypassing this package's own settle path — and
+        // blocking that later path wouldn't undo an already-broadcast
+        // transfer. So this has to gate challenge construction, not just
+        // settlement.
+        try {
+            $this->guardPayee->execute('x402_pay_to', $this->resolvePayee->execute('x402_pay_to', config('lunar-crypto.x402')));
+        } catch (PayeeAddressChangedException) {
+            // Deliberately not a 402: a 402 payment challenge advertises a
+            // payment opportunity, and we don't want to advertise one for
+            // an unconfirmed/changed address at all. Detail is already
+            // logged critically inside GuardPayeeAddressChange.
+            return response()->json([
+                'error' => 'Payment configuration requires operator re-confirmation. Contact the store operator.',
+            ], 503);
+        }
+
+        $requirements = $this->buildRequirements->execute($cart->total, config('lunar-crypto.x402'), 'x402_pay_to');
 
         $header = $request->header('X-PAYMENT');
 

@@ -8,7 +8,7 @@ function validRequirements(): array
         'scheme' => 'exact',
         'network' => 'eip155:8453',
         'amount' => '10000000',
-        'asset' => '0x833589fCD6eDb6e08f4c7C32D4f71b54bdA02913',
+        'asset' => '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
         'payTo' => '0xmerchant',
         'maxTimeoutSeconds' => 60,
     ];

@@ -7,7 +7,7 @@ use Lunar\Models\Cart;
 beforeEach(function () {
     config()->set('lunar-crypto.pay_to', '0xmerchant');
     config()->set('lunar-crypto.network', 'eip155:8453');
-    config()->set('lunar-crypto.asset', '0x833589fCD6eDb6e08f4c7C32D4f71b54bdA02913');
+    config()->set('lunar-crypto.asset', '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913');
     config()->set('lunar-crypto.pegged_currency', 'USD');
     config()->set('lunar-crypto.facilitators.payai.url', 'https://facilitator.payai.network');
     config()->set('lunar-crypto.facilitator_order', ['payai']);
@@ -26,7 +26,7 @@ it('settles a real cart end to end into a placed order', function () {
             'scheme' => 'exact',
             'network' => 'eip155:8453',
             'amount' => $requiredAmount,
-            'asset' => '0x833589fCD6eDb6e08f4c7C32D4f71b54bdA02913',
+            'asset' => '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
             'payTo' => '0xmerchant',
             'maxTimeoutSeconds' => 60,
         ],
@@ -94,7 +94,7 @@ it('does not settle twice on a retried authorize call', function () {
             'scheme' => 'exact',
             'network' => 'eip155:8453',
             'amount' => $requiredAmount,
-            'asset' => '0x833589fCD6eDb6e08f4c7C32D4f71b54bdA02913',
+            'asset' => '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
             'payTo' => '0xmerchant',
             'maxTimeoutSeconds' => 60,
         ],
@@ -147,7 +147,7 @@ it('rejects a payload whose signed amount is lower than the cart total (fraud at
             'scheme' => 'exact',
             'network' => 'eip155:8453',
             'amount' => $requiredAmount, // claims to match
-            'asset' => '0x833589fCD6eDb6e08f4c7C32D4f71b54bdA02913',
+            'asset' => '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
             'payTo' => '0xmerchant',
             'maxTimeoutSeconds' => 60,
         ],
@@ -187,7 +187,7 @@ it('refuses to settle a cart while another attempt for it holds the lock', funct
             'scheme' => 'exact',
             'network' => 'eip155:8453',
             'amount' => $requiredAmount,
-            'asset' => '0x833589fCD6eDb6e08f4c7C32D4f71b54bdA02913',
+            'asset' => '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
             'payTo' => '0xmerchant',
             'maxTimeoutSeconds' => 60,
         ],

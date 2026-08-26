@@ -5,7 +5,7 @@ return [
     'network' => env('LUNAR_CRYPTO_NETWORK', 'eip155:8453'),
 
     // ERC-20 token contract address (not a symbol) — USDC on the network above.
-    'asset' => env('LUNAR_CRYPTO_ASSET', '0x833589fCD6eDb6e08f4c7C32D4f71b54bdA02913'),
+    'asset' => env('LUNAR_CRYPTO_ASSET', '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'),
 
     // Decimal places the asset's atomic unit uses. USDC = 6. The order
     // total (in the store currency's minor unit, e.g. cents) is rescaled to

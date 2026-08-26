@@ -6,7 +6,7 @@ use Lunar\Models\Cart;
 
 beforeEach(function () {
     config()->set('lunar-crypto.network', 'eip155:8453');
-    config()->set('lunar-crypto.asset', '0x833589fCD6eDb6e08f4c7C32D4f71b54bdA02913');
+    config()->set('lunar-crypto.asset', '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913');
     config()->set('lunar-crypto.pegged_currency', 'USD');
     config()->set('lunar-crypto.facilitators.payai.url', 'https://facilitator.payai.network');
     config()->set('lunar-crypto.facilitator_order', ['payai']);
@@ -39,7 +39,7 @@ it('settles and lets the request through with a valid X-PAYMENT header', functio
             'scheme' => 'exact',
             'network' => 'eip155:8453',
             'amount' => $requiredAmount,
-            'asset' => '0x833589fCD6eDb6e08f4c7C32D4f71b54bdA02913',
+            'asset' => '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
             'payTo' => config('lunar-crypto.x402.pay_to'),
             'maxTimeoutSeconds' => 60,
         ],
