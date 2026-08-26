@@ -91,6 +91,8 @@ class SettleOnChainPayment
             txHash: $settle['transaction'] ?? null,
             settledAmount: isset($settle['amount']) ? (int) $settle['amount'] : (int) $paymentRequirements['amount'],
             message: null,
+            payer: $settle['payer'] ?? null,
+            facilitator: $name,
         );
     }
 }

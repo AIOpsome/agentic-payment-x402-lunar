@@ -47,6 +47,7 @@ it('settles successfully when the facilitator verifies and settles', function ()
             'success' => true,
             'transaction' => '0xtxhash',
             'network' => 'eip155:8453',
+            'payer' => '0xpayer',
         ]),
     ]);
 
@@ -54,7 +55,9 @@ it('settles successfully when the facilitator verifies and settles', function ()
 
     expect($result->success)->toBeTrue()
         ->and($result->txHash)->toBe('0xtxhash')
-        ->and($result->settledAmount)->toBe(10000);
+        ->and($result->settledAmount)->toBe(10000)
+        ->and($result->payer)->toBe('0xpayer')
+        ->and($result->facilitator)->toBe('payai');
 });
 
 it('fails without calling settle when verification fails', function () {

@@ -25,6 +25,11 @@ Two entry points share one settlement core:
   points call into. Calls a facilitator's `/verify` then `/settle` per the
   [x402 v2 spec](https://github.com/coinbase/x402/blob/main/specs/x402-specification-v2.md),
   trying `lunar-crypto.facilitator_order` in turn until one succeeds.
+- `Models\CryptoSettlement` — an audit-trail row written the instant a
+  facilitator confirms settlement, before the order transaction/`placed_at`
+  writes that follow it. On-chain settlement can't be undone; if those writes
+  fail, this row is the proof funds already moved, and a retried
+  `authorize()` resumes from it instead of settling (and charging) again.
 
 ### Facilitators
 
@@ -53,6 +58,22 @@ authenticated (signed) requests; that signing isn't implemented yet
   yet.
 - CDP-authenticated facilitator support (JWT request signing) if/when someone
   wants the mainnet Coinbase option instead of PayAI.
+- `CryptoPaymentType` has no integration test yet — it needs Lunar core's
+  Cart/Order factories and migrations, which aren't available outside the
+  monorepo's own test suite. `SettleOnChainPayment` and `CryptoSettlement`
+  are unit tested; the full `authorize()` flow (order creation, the
+  settle-then-record ordering, the retry/idempotency path) is not yet
+  exercised against a real database.
+
+## Prior art / lessons folded in
+
+[`financedistrict-platform/saleor-agentic-commerce`](https://github.com/financedistrict-platform/saleor-agentic-commerce)
+ships an equivalent x402/EIP-3009 stablecoin handler for Saleor (not
+portable here — different stack). Their merged
+[#65](https://github.com/financedistrict-platform/saleor-agentic-commerce/pull/65)
+(SAC-2) found that settling on-chain and then writing the order can silently
+lose the audit trail if the order write fails after money has already moved.
+`CryptoSettlement` exists specifically to avoid that class of bug here.
 
 ## Testing
 

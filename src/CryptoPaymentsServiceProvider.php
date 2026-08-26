@@ -27,5 +27,9 @@ class CryptoPaymentsServiceProvider extends ServiceProvider
         $this->publishes([
             __DIR__.'/../config/crypto.php' => config_path('lunar-crypto.php'),
         ], 'lunar-crypto.config');
+
+        if (! config('lunar.database.disable_migrations', false)) {
+            $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
+        }
     }
 }
