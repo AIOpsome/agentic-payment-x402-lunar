@@ -10,31 +10,44 @@ end-to-end against a live checkout. Not ready for production use.
 
 ## Design
 
-Two entry points share one settlement core:
+Both entry points settle into the same place — a Lunar cart becoming a
+placed order — via one shared pipeline:
 
 - `PaymentTypes\CryptoPaymentType` — implements Lunar's `PaymentTypeInterface`
   for human checkout, same pattern as `lunarphp/stripe`. The frontend has the
   shopper sign an EIP-3009 transfer (e.g. USDC) and posts the resulting x402
-  `PaymentPayload` as cart data; `authorize()` settles it and creates the
-  order.
-- `X402\X402PaymentMiddleware` — wraps agent-facing routes. Not a cart/order
-  checkout flow, so it does not implement `PaymentTypeInterface`; it's plain
-  middleware that responds `402` with payment requirements, then settles a
-  signed `X-PAYMENT` header on retry.
-- `Actions\SettleOnChainPayment` — the shared verify/settle core both entry
-  points call into. Calls a facilitator's `/verify` then `/settle` per the
+  `PaymentPayload` as cart data; `authorize()` delegates to
+  `AuthorizeCryptoPayment`.
+- `X402\X402PaymentMiddleware` — wraps a cart-checkout route for agent
+  payments. Not a `PaymentTypeInterface` implementation — x402 is an HTTP 402
+  challenge on a route, not something Lunar's checkout invokes — but it
+  resolves a `Cart` via Laravel route-model binding (`{cart}` route
+  parameter) and delegates to the exact same `AuthorizeCryptoPayment`. The
+  consuming app is responsible for building/pricing the cart itself (its own
+  product/checkout API) before ever hitting an x402-protected route — this
+  middleware only owns "is this cart paid for", the same boundary
+  `CryptoPaymentType` has for human checkout. Route example in the class
+  docblock.
+- `Actions\AuthorizeCryptoPayment` — the one place a signed payload becomes a
+  placed order: resolves/creates the order for a cart, checks the
+  `CryptoSettlement` idempotency guard, settles, and finalizes. Both entry
+  points call this directly rather than duplicating it, so there's exactly
+  one settle-then-record-then-finalize implementation to get right.
+- `Actions\SettleOnChainPayment` — the facilitator verify/settle core.
+  Calls a facilitator's `/verify` then `/settle` per the
   [x402 v2 spec](https://github.com/coinbase/x402/blob/main/specs/x402-specification-v2.md),
   trying `lunar-crypto.facilitator_order` in turn until one succeeds.
+- `Actions\BuildPaymentRequirements` — turns any Lunar `Price` (a cart's or
+  an order's `->total`) into an x402 `PaymentRequirements` object, via...
+- `Actions\ConvertToAssetUnits` — ...which rescales that total from the store
+  currency's minor unit (e.g. cents) to the asset's atomic unit (USDC = 6
+  decimals). Refuses (rather than silently mispricing) if the store currency
+  isn't the configured `pegged_currency` — no FX conversion is implemented.
 - `Models\CryptoSettlement` — an audit-trail row written the instant a
   facilitator confirms settlement, before the order transaction/`placed_at`
   writes that follow it. On-chain settlement can't be undone; if those writes
-  fail, this row is the proof funds already moved, and a retried
-  `authorize()` resumes from it instead of settling (and charging) again.
-- `Actions\ConvertToAssetUnits` — rescales the order total from the store
-  currency's minor unit (e.g. cents) to the asset's atomic unit (USDC = 6
-  decimals) before it's sent to the facilitator. Refuses (rather than
-  silently mispricing) if the store currency isn't the configured
-  `pegged_currency` — no FX conversion is implemented.
+  fail, this row is the proof funds already moved, and a retried attempt
+  resumes from it instead of settling (and charging) again.
 
 ### Facilitators
 
@@ -57,20 +70,29 @@ authenticated (signed) requests; that signing isn't implemented yet
 
 ## Open questions before this is real
 
-- How the x402 agent flow maps a priced route to a Lunar cart/order — the
-  human flow always has a cart; a generic priced API endpoint may not.
 - Refund path: requires a separate outbound on-chain transfer, not sketched
   yet.
 - CDP-authenticated facilitator support (JWT request signing) if/when someone
   wants the mainnet Coinbase option instead of PayAI.
-- `CryptoPaymentType` and `CryptoSettlement` have no test coverage yet.
-  `BaseModel` (which `CryptoSettlement` extends) requires
-  `Lunar\Base\ModelManifestInterface`, which only exists once
-  `LunarServiceProvider` — and its own dependency chain (Blink, MediaLibrary,
-  ActivityLog, NestedSet, Converter, per how `lunarphp/stripe`'s own test
-  suite bootstraps it) — is registered, plus Cart/Order factories and
-  migrations that live only in the monorepo's internal test suite. Only
-  `SettleOnChainPayment` (pure HTTP, no Eloquent) is unit tested so far.
+- `CryptoPaymentType`, `AuthorizeCryptoPayment`, `BuildPaymentRequirements`,
+  and `CryptoSettlement` have no test coverage yet — anything touching a
+  Lunar `Cart`/`Order`/`Price`/`Currency` model needs `LunarServiceProvider`
+  — and its own dependency chain (Blink, MediaLibrary, ActivityLog,
+  NestedSet, Converter, per how `lunarphp/stripe`'s own test suite bootstraps
+  it) — registered, plus Cart/Order factories and migrations that live only
+  in the monorepo's internal test suite (`Lunar\Base\ModelManifestInterface`
+  isn't bound without it — every Lunar model construction fails outside a
+  booted provider, not just database access). Only `SettleOnChainPayment` and
+  `ConvertToAssetUnits` (pure logic, no Eloquent) are unit tested so far.
+- x402 agent flow → cart/order mapping (previously open) is resolved: the
+  consuming app builds/prices the `Cart` via its own product API, then binds
+  it to the `{cart}` route parameter on an x402-protected checkout-completion
+  route. `X402PaymentMiddleware` and `CryptoPaymentType` both settle through
+  `AuthorizeCryptoPayment`, so there's one code path for "cart becomes
+  order," not two. What's still unresolved: whether a Lunar app has a public
+  cart-building API at all by default (it doesn't ship one — that's a
+  storefront/headless-API concern), so this middleware assumes the consuming
+  app already has one.
 
 ## Prior art / lessons folded in
 
