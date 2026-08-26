@@ -9,5 +9,7 @@ class SettlementResult
         public ?string $txHash = null,
         public ?int $settledAmount = null,
         public ?string $message = null,
+        public ?string $payer = null,
+        public ?string $facilitator = null,
     ) {}
 }
