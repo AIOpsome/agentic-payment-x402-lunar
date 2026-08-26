@@ -90,6 +90,38 @@ it('falls through to the next facilitator when the first errors', function () {
         ->and($result->txHash)->toBe('0xfallback');
 });
 
+it('rejects a settlement that reports a different amount than requested', function () {
+    Http::fake([
+        'facilitator.payai.network/verify' => Http::response(['isValid' => true]),
+        'facilitator.payai.network/settle' => Http::response([
+            'success' => true,
+            'transaction' => '0xtxhash',
+            'amount' => '999999',
+        ]),
+    ]);
+
+    $result = (new SettleOnChainPayment)->execute(samplePayload(), sampleRequirements());
+
+    expect($result->success)->toBeFalse()
+        ->and($result->message)->toContain('different amount');
+});
+
+it('rejects a settlement that reports a different network than requested', function () {
+    Http::fake([
+        'facilitator.payai.network/verify' => Http::response(['isValid' => true]),
+        'facilitator.payai.network/settle' => Http::response([
+            'success' => true,
+            'transaction' => '0xtxhash',
+            'network' => 'eip155:84532',
+        ]),
+    ]);
+
+    $result = (new SettleOnChainPayment)->execute(samplePayload(), sampleRequirements());
+
+    expect($result->success)->toBeFalse()
+        ->and($result->message)->toContain('different network');
+});
+
 it('throws when the only configured facilitator requires unimplemented auth', function () {
     config()->set('lunar-crypto.facilitators.coinbase_cdp', [
         'url' => 'https://api.cdp.coinbase.com/platform/v2/x402',

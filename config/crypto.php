@@ -58,5 +58,9 @@ return [
     'x402' => [
         'network' => env('LUNAR_CRYPTO_X402_NETWORK', 'eip155:8453'),
         'pay_to' => env('LUNAR_CRYPTO_X402_PAY_TO'),
+
+        // "<max attempts>,<decay minutes>" per requester IP, before every
+        // request costs a facilitator round-trip.
+        'rate_limit' => env('LUNAR_CRYPTO_X402_RATE_LIMIT', '30,1'),
     ],
 ];

@@ -86,10 +86,36 @@ class SettleOnChainPayment
             return new SettlementResult(success: false, message: $settle['errorReason'] ?? 'Settlement failed');
         }
 
+        // Don't trust the facilitator's own numbers blindly — if it reports
+        // settling a different amount/network than we asked for (facilitator
+        // bug, or a compromised/MITM'd endpoint), that's not a payment we
+        // should treat as valid just because `success` was true.
+        $settledAmount = isset($settle['amount']) ? (string) $settle['amount'] : $paymentRequirements['amount'];
+
+        if ($settledAmount !== $paymentRequirements['amount']) {
+            Log::error("Crypto payment facilitator [{$name}] settled a different amount than requested — refusing to trust it.", [
+                'requested' => $paymentRequirements['amount'],
+                'settled' => $settledAmount,
+                'transaction' => $settle['transaction'] ?? null,
+            ]);
+
+            return new SettlementResult(success: false, message: 'Facilitator settled a different amount than requested.');
+        }
+
+        if (isset($settle['network']) && $settle['network'] !== $paymentRequirements['network']) {
+            Log::error("Crypto payment facilitator [{$name}] settled on a different network than requested — refusing to trust it.", [
+                'requested' => $paymentRequirements['network'],
+                'settled' => $settle['network'],
+                'transaction' => $settle['transaction'] ?? null,
+            ]);
+
+            return new SettlementResult(success: false, message: 'Facilitator settled on a different network than requested.');
+        }
+
         return new SettlementResult(
             success: true,
             txHash: $settle['transaction'] ?? null,
-            settledAmount: isset($settle['amount']) ? (int) $settle['amount'] : (int) $paymentRequirements['amount'],
+            settledAmount: (int) $settledAmount,
             message: null,
             payer: $settle['payer'] ?? null,
             facilitator: $name,

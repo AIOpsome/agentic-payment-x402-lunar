@@ -4,6 +4,7 @@ namespace Lunar\CryptoPayments\X402;
 
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\RateLimiter;
 use Lunar\CryptoPayments\Actions\AuthorizeCryptoPayment;
 use Lunar\CryptoPayments\Actions\BuildPaymentRequirements;
 use Lunar\Models\Contracts\Cart;
@@ -32,6 +33,19 @@ class X402PaymentMiddleware
 
     public function handle(Request $request, Closure $next)
     {
+        // Every request through here — even a malformed one — costs a
+        // facilitator round-trip once past this point (see
+        // ValidatePaymentPayload for what's cheap-rejected before that).
+        // Rate limit first so that cost can't be amplified by flooding.
+        $key = 'lunar-crypto-x402:'.$request->ip();
+        [$maxAttempts, $decaySeconds] = $this->parseRateLimit();
+
+        if (RateLimiter::tooManyAttempts($key, $maxAttempts)) {
+            return response()->json(['error' => 'Too many payment attempts, try again later'], 429);
+        }
+
+        RateLimiter::hit($key, $decaySeconds);
+
         $cart = $request->route('cart');
 
         if (! $cart instanceof Cart) {
@@ -72,5 +86,15 @@ class X402PaymentMiddleware
         $request->attributes->set('lunar_crypto_order', $result->order);
 
         return $next($request);
+    }
+
+    /**
+     * @return array{0: int, 1: int} [maxAttempts, decaySeconds]
+     */
+    protected function parseRateLimit(): array
+    {
+        [$max, $minutes] = array_pad(explode(',', (string) config('lunar-crypto.x402.rate_limit', '30,1')), 2, 1);
+
+        return [max(1, (int) $max), max(1, (int) $minutes) * 60];
     }
 }
