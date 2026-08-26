@@ -12,8 +12,9 @@ use Lunar\Models\Contracts\Transaction as TransactionContract;
 use Lunar\PaymentTypes\AbstractPayment;
 
 /**
- * Human wallet checkout: the frontend has the shopper sign a transfer
- * (e.g. USDC via EIP-3009) and posts the signed payload here as cart data.
+ * Human wallet checkout: the frontend has the shopper sign an EIP-3009
+ * transfer (e.g. USDC) via their wallet and posts the resulting x402
+ * PaymentPayload here as cart data (`payment_payload`).
  */
 class CryptoPaymentType extends AbstractPayment
 {
@@ -35,11 +36,9 @@ class CryptoPaymentType extends AbstractPayment
             }
         }
 
-        $result = $this->settle->execute(
-            $payload,
-            $this->order->total->value,
-            $this->config['asset'] ?? 'USDC',
-        );
+        $requirements = $this->buildPaymentRequirements();
+
+        $result = $this->settle->execute($payload, $requirements);
 
         if (! $result->success) {
             return new PaymentAuthorize(success: false, message: $result->message, orderId: $this->order->id, paymentType: 'crypto');
@@ -57,6 +56,18 @@ class CryptoPaymentType extends AbstractPayment
         $this->order->update(['placed_at' => now()]);
 
         return new PaymentAuthorize(success: true, orderId: $this->order->id, paymentType: 'crypto');
+    }
+
+    protected function buildPaymentRequirements(): array
+    {
+        return [
+            'scheme' => 'exact',
+            'network' => $this->config['network'] ?? config('lunar-crypto.network'),
+            'amount' => (string) $this->order->total->value,
+            'asset' => $this->config['asset'] ?? config('lunar-crypto.asset'),
+            'payTo' => $this->config['pay_to'] ?? config('lunar-crypto.pay_to'),
+            'maxTimeoutSeconds' => 60,
+        ];
     }
 
     // On-chain settlement is atomic (verify + settle in one call) — nothing to
