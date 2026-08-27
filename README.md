@@ -1,4 +1,4 @@
-# Lunar Crypto Payments
+# agentic-payment-x402-lunar
 
 Crypto payment driver for [Lunar](https://lunarphp.io) — pay with crypto as a
 human (wallet-signed on-chain transfer at checkout) or as an agent (x402
@@ -24,7 +24,7 @@ quietly.
 ## Installation
 
 ```bash
-composer require wakqasahmed/lunar-crypto-payments
+composer require wakqasahmed/agentic-payment-x402-lunar
 php artisan vendor:publish --tag=lunar-crypto.config
 php artisan migrate
 ```
@@ -200,19 +200,19 @@ lose the audit trail if the order write fails after money has already moved.
 `CryptoSettlement` exists specifically to avoid that class of bug here.
 
 A cross-repo edge-case audit (2026-08-26, see
-[#3](https://github.com/wakqasahmed/lunar-crypto-payments/issues/3)) also
+[#3](https://github.com/wakqasahmed/agentic-payment-x402-lunar/issues/3)) also
 caught the same major/minor-unit mismatch that financedistrict-platform hit
 in production (Saleor PR #34) — this package's order total was being sent to
 the facilitator without converting from the store currency's minor unit to
 the asset's atomic unit. Fixed by `ConvertToAssetUnits`. The same audit
 filed 4 more hardening issues, all addressed:
-[#4](https://github.com/wakqasahmed/lunar-crypto-payments/issues/4) facilitator
-response cross-validation, [#5](https://github.com/wakqasahmed/lunar-crypto-payments/issues/5)
-payload validation, [#6](https://github.com/wakqasahmed/lunar-crypto-payments/issues/6)
-x402 rate limiting, [#7](https://github.com/wakqasahmed/lunar-crypto-payments/issues/7)
+[#4](https://github.com/wakqasahmed/agentic-payment-x402-lunar/issues/4) facilitator
+response cross-validation, [#5](https://github.com/wakqasahmed/agentic-payment-x402-lunar/issues/5)
+payload validation, [#6](https://github.com/wakqasahmed/agentic-payment-x402-lunar/issues/6)
+x402 rate limiting, [#7](https://github.com/wakqasahmed/agentic-payment-x402-lunar/issues/7)
 network/asset config sanity check (payee-change protection from the same
 issue is still open — see [Known limitations](#known-limitations)), and
-[#8](https://github.com/wakqasahmed/lunar-crypto-payments/issues/8)
+[#8](https://github.com/wakqasahmed/agentic-payment-x402-lunar/issues/8)
 order-total drift.
 
 ## Testing
