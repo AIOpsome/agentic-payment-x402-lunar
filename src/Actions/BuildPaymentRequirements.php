@@ -12,9 +12,12 @@ use Lunar\DataTypes\Price;
  */
 class BuildPaymentRequirements
 {
-    public function __construct(protected ConvertToAssetUnits $convert) {}
+    public function __construct(
+        protected ConvertToAssetUnits $convert,
+        protected ResolvePayeeAddress $resolvePayee,
+    ) {}
 
-    public function execute(Price $total, array $config = []): array
+    public function execute(Price $total, array $config = [], string $payeeKey = 'pay_to'): array
     {
         $amount = $this->convert->execute(
             value: $total->value,
@@ -29,7 +32,7 @@ class BuildPaymentRequirements
             'network' => $config['network'] ?? config('lunar-crypto.network'),
             'amount' => $amount,
             'asset' => $config['asset'] ?? config('lunar-crypto.asset'),
-            'payTo' => $config['pay_to'] ?? config('lunar-crypto.pay_to'),
+            'payTo' => $this->resolvePayee->execute($payeeKey, $config),
             'maxTimeoutSeconds' => 60,
         ];
     }

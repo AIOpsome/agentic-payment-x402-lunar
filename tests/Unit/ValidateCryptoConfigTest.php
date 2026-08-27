@@ -3,7 +3,7 @@
 use Lunar\CryptoPayments\Actions\ValidateCryptoConfig;
 
 it('allows a known-good asset address for the network', function () {
-    (new ValidateCryptoConfig)->execute('eip155:8453', '0x833589fCD6eDb6e08f4c7C32D4f71b54bdA02913');
+    (new ValidateCryptoConfig)->execute('eip155:8453', '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913');
 })->throwsNoExceptions();
 
 it('is case-insensitive when comparing addresses', function () {
@@ -21,5 +21,5 @@ it('allows an unrecognized network through unchecked', function () {
 it('does not crash on missing config rather than taking down app boot', function () {
     (new ValidateCryptoConfig)->execute(null, null);
     (new ValidateCryptoConfig)->execute('eip155:8453', null);
-    (new ValidateCryptoConfig)->execute(null, '0x833589fCD6eDb6e08f4c7C32D4f71b54bdA02913');
+    (new ValidateCryptoConfig)->execute(null, '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913');
 })->throwsNoExceptions();

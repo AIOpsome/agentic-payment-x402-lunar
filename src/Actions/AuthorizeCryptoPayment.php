@@ -6,6 +6,7 @@ use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Lunar\CryptoPayments\DataTransferObjects\CryptoAuthorizationResult;
+use Lunar\CryptoPayments\Exceptions\PayeeAddressChangedException;
 use Lunar\CryptoPayments\Models\CryptoSettlement;
 use Lunar\Exceptions\Carts\CartException;
 use Lunar\Exceptions\DisallowMultipleCartOrdersException;
@@ -28,9 +29,11 @@ class AuthorizeCryptoPayment
         protected BuildPaymentRequirements $buildRequirements,
         protected ValidatePaymentPayload $validatePayload,
         protected SettleOnChainPayment $settle,
+        protected GuardPayeeAddressChange $guardPayee,
+        protected ResolvePayeeAddress $resolvePayee,
     ) {}
 
-    public function execute(Cart $cart, array $payload, array $config = [], ?Order $order = null): CryptoAuthorizationResult
+    public function execute(Cart $cart, array $payload, array $config = [], ?Order $order = null, string $payeeKey = 'pay_to'): CryptoAuthorizationResult
     {
         if (! $order) {
             try {
@@ -38,6 +41,25 @@ class AuthorizeCryptoPayment
             } catch (DisallowMultipleCartOrdersException|CartException $e) {
                 return new CryptoAuthorizationResult(success: false, message: $e->getMessage());
             }
+        }
+
+        // Guards against a compromised/mistyped .env or deploy pipeline
+        // silently redirecting settlements to a different wallet — checked
+        // before anything else costs a facilitator round-trip. Same
+        // pay_to resolution BuildPaymentRequirements uses, so this guards
+        // the exact address that would actually be requested.
+        try {
+            $this->guardPayee->execute($payeeKey, $this->resolvePayee->execute($payeeKey, $config));
+        } catch (PayeeAddressChangedException) {
+            // Full detail (previous/new address, config key, remediation
+            // command) is already logged critically inside GuardPayeeAddressChange
+            // — this result flows back to an unauthenticated caller via the
+            // 402/error response, so it must stay generic.
+            return new CryptoAuthorizationResult(
+                success: false,
+                order: $order,
+                message: 'Payment configuration requires operator re-confirmation. Contact the store operator.',
+            );
         }
 
         // Idempotency guard: a prior attempt may have settled on-chain and
@@ -75,7 +97,7 @@ class AuthorizeCryptoPayment
                 }
 
                 if (! $settlement) {
-                    $requirements = $this->buildRequirements->execute($order->total, $config);
+                    $requirements = $this->buildRequirements->execute($order->total, $config, $payeeKey);
 
                     if ($error = $this->validatePayload->execute($payload, $requirements)) {
                         return new CryptoAuthorizationResult(success: false, order: $order, message: $error);
