@@ -20,14 +20,12 @@ const hasChangeset = changedFiles.some(file =>
     file.startsWith('.changeset/') && file.endsWith('.md') && file !== '.changeset/README.md'
 );
 const hasNoChangesetLabel = labels.includes('no-changeset');
-const isReleaseExempt = file =>
-    file.startsWith('.github/') ||
-    file.startsWith('tests/') ||
-    file.startsWith('docs/') ||
-    file === 'CONTRIBUTING.md' ||
-    file === 'LICENSE' ||
-    file === 'phpunit.xml.dist';
-const releaseRelevantFiles = changedFiles.filter(file => !isReleaseExempt(file));
+const isReleaseRelevant = file =>
+    file.startsWith('src/') ||
+    file.startsWith('config/') ||
+    file.startsWith('database/') ||
+    file === 'composer.json';
+const releaseRelevantFiles = changedFiles.filter(isReleaseRelevant);
 
 if (releaseRelevantFiles.length === 0 || hasChangeset || hasNoChangesetLabel) {
     process.exit(0);
