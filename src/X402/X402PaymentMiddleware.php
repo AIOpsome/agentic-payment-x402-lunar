@@ -86,32 +86,65 @@ class X402PaymentMiddleware
 
         $requirements = $this->buildRequirements->execute($cart->total, config('lunar-crypto.x402'), 'x402_pay_to');
 
-        $header = $request->header('X-PAYMENT');
+        // Header lookup is already case-insensitive (HeaderBag lowercases the
+        // key), so one lookup per header name covers every casing on the wire.
+        $header = $request->header('PAYMENT-SIGNATURE') ?? $request->header('X-PAYMENT');
 
         if (! $header) {
-            return response()->json([
-                'x402Version' => 2,
-                'error' => 'X-PAYMENT header is required',
-                'resource' => ['url' => $request->fullUrl()],
-                'accepts' => [$requirements],
-            ], 402);
+            return $this->paymentRequired($request, $requirements, 'Payment Required');
         }
 
-        $payload = json_decode(base64_decode($header), true);
+        $decoded = base64_decode($header, true);
+        $payload = $decoded === false ? null : json_decode($decoded, true);
 
-        if (! $payload) {
-            return response()->json(['error' => 'Malformed X-PAYMENT header'], 402);
+        // Reject a structurally-useless payload here, before
+        // AuthorizeCryptoPayment creates a draft order and takes a lock for
+        // it. `is_array()` alone would let a base64'd `{}` or `[1,2,3]`
+        // through to those side effects just to be rejected later.
+        if (! is_array($payload) || ! isset($payload['accepted'], $payload['payload'])) {
+            return $this->paymentRequired($request, $requirements, 'Malformed PAYMENT-SIGNATURE header');
         }
 
         $result = $this->authorizeCryptoPayment->execute($cart, $payload, config('lunar-crypto.x402'), null, 'x402_pay_to');
 
         if (! $result->success) {
-            return response()->json(['error' => $result->message], 402);
+            return $this->paymentRequired($request, $requirements, $result->message);
         }
 
         $request->attributes->set('lunar_crypto_order', $result->order);
 
-        return $next($request);
+        $response = $next($request);
+
+        if ($result->transaction) {
+            $settlementResponse = [
+                'success' => true,
+                'transaction' => $result->transaction,
+                'network' => $result->network,
+            ];
+            $response->headers->set('PAYMENT-RESPONSE', base64_encode(json_encode($settlementResponse)));
+        }
+
+        return $response;
+    }
+
+    /**
+     * The one 402 shape every challenge path returns: an empty v2 body, with
+     * the requirements and the failure reason in the PAYMENT-REQUIRED header
+     * so a client that retried with a bad signature can re-quote from the
+     * same place it read the original challenge.
+     */
+    protected function paymentRequired(Request $request, array $requirements, ?string $error)
+    {
+        $paymentRequired = [
+            'x402Version' => 2,
+            'error' => $error ?? 'Payment Required',
+            'resource' => ['url' => $request->fullUrl()],
+            'accepts' => [$requirements],
+        ];
+
+        return response()->json(new \stdClass, 402, [
+            'PAYMENT-REQUIRED' => base64_encode(json_encode($paymentRequired)),
+        ]);
     }
 
     /**

@@ -5,7 +5,12 @@ return [
     'network' => env('LUNAR_CRYPTO_NETWORK', 'eip155:8453'),
 
     // ERC-20 token contract address (not a symbol) — USDC on the network above.
-    'asset' => env('LUNAR_CRYPTO_ASSET', '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'),
+    // Deliberately null by default: BuildPaymentRequirements resolves USDC for
+    // whichever network is actually in play (human checkout or x402, which may
+    // differ), so switching to testnet needs no second setting and the asset
+    // can never drift from the network. Only set this for a non-USDC asset, or
+    // for a network this package has no default for.
+    'asset' => env('LUNAR_CRYPTO_ASSET'),
 
     // Decimal places the asset's atomic unit uses. USDC = 6. The order
     // total (in the store currency's minor unit, e.g. cents) is rescaled to
@@ -56,7 +61,9 @@ return [
     'facilitator_order' => ['payai'],
 
     'x402' => [
-        'network' => env('LUNAR_CRYPTO_X402_NETWORK', 'eip155:8453'),
+        // Follows lunar-crypto.network unless explicitly overridden, so
+        // LUNAR_CRYPTO_NETWORK alone switches both flows to testnet.
+        'network' => env('LUNAR_CRYPTO_X402_NETWORK', env('LUNAR_CRYPTO_NETWORK', 'eip155:8453')),
         'pay_to' => env('LUNAR_CRYPTO_X402_PAY_TO'),
 
         // "<max attempts>,<decay minutes>" per requester IP, before every
