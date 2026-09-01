@@ -33,10 +33,15 @@ class BuildPaymentRequirements
         );
 
         $network = $config['network'] ?? config('lunar-crypto.network', 'eip155:8453');
+        // Fail closed on an unrecognized network rather than falling back to a
+        // mainnet contract: a typo'd network must not silently produce a
+        // mainnet-priced requirement for a merchant who meant testnet.
         $asset = $config['asset']
             ?? config('lunar-crypto.asset')
             ?? self::DEFAULT_ASSETS[$network]
-            ?? self::DEFAULT_ASSETS['eip155:8453'];
+            ?? throw new \RuntimeException(
+                "No default asset is known for network [{$network}]. Set lunar-crypto.asset explicitly."
+            );
 
         return [
             'scheme' => 'exact',

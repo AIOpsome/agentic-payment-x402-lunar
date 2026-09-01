@@ -49,6 +49,20 @@ LUNAR_CRYPTO_PAY_TO=0xYourWalletAddress
 LUNAR_CRYPTO_X402_PAY_TO=0xYourWalletAddress
 ```
 
+To run against Base Sepolia instead of Base mainnet, set the network — the
+matching USDC contract is resolved automatically, so there is no second
+address to keep in sync:
+
+```env
+LUNAR_CRYPTO_NETWORK=eip155:84532
+```
+
+`LUNAR_CRYPTO_X402_NETWORK` follows `LUNAR_CRYPTO_NETWORK` unless you set it,
+for the rare case of running agent payments on a different network than human
+checkout. Set `LUNAR_CRYPTO_ASSET` only for a non-USDC asset or a network this
+package has no default for — an unknown network with no explicit asset is a
+hard error rather than a silent mainnet fallback.
+
 ## Usage
 
 ### Human checkout
@@ -72,9 +86,14 @@ Route::post('/x402/carts/{cart}/checkout', CompleteCheckoutController::class)
     ->middleware('x402');
 ```
 
-An agent hitting that route with no `X-PAYMENT` header gets a 402 response
-with payment requirements; retrying with a signed `X-PAYMENT` header
-settles the cart into a placed order, exactly like the human flow.
+An agent hitting that route with no `PAYMENT-SIGNATURE` header gets a 402
+whose `PAYMENT-REQUIRED` header carries the base64-encoded x402 v2 challenge
+(body is `{}`, per spec); retrying with a signed base64 `PAYMENT-SIGNATURE`
+header settles the cart into a placed order, exactly like the human flow, and
+the response carries a `PAYMENT-RESPONSE` header with the settlement receipt.
+Every 402 from this middleware — including a malformed header or a rejected
+authorization — carries a fresh `PAYMENT-REQUIRED` header, so a client can
+always re-quote. The pre-v2 `X-PAYMENT` request header is still accepted.
 
 ## Design
 
@@ -115,9 +134,9 @@ placed order — via one shared pipeline:
   `authorization.value`/`.to`, not just the client-echoed `accepted.*` —
   see below. Since requirements are always rebuilt fresh from the order's
   *current* total, this also catches quote-to-settlement drift.
-- `Actions\ValidateCryptoConfig` — run at service-provider boot: cross-checks
-  the configured asset address against the configured network (both the
-  human-checkout and x402 networks) for the networks it knows about,
+- `Actions\ValidateCryptoConfig` — run at service-provider boot: when an
+  asset address is explicitly configured, cross-checks it against the
+  configured network (both the human-checkout and x402 networks),
   catching a testnet/mainnet mismatch at deploy time instead of at the first
   checkout.
 - `Actions\GuardPayeeAddressChange` — run on every `authorize()`/x402

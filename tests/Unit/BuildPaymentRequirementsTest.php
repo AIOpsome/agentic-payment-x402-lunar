@@ -35,3 +35,15 @@ it('defaults to Base Sepolia USDC when network is eip155:84532', function () {
     expect($reqs['network'])->toBe('eip155:84532')
         ->and($reqs['asset'])->toBe('0x036CbD53842c5426634e7929541eC2318f3dCF7e');
 });
+
+it('throws rather than falling back to mainnet USDC for an unknown network', function () {
+    $currency = Mockery::mock(\Lunar\Models\Contracts\Currency::class);
+    $currency->decimal_places = 2;
+    $currency->code = 'USD';
+    $price = new Price(1000, $currency, 1);
+
+    $action = new BuildPaymentRequirements(new ConvertToAssetUnits, new ResolvePayeeAddress);
+
+    expect(fn () => $action->execute($price, ['network' => 'eip155:1', 'pay_to' => '0xmerchant']))
+        ->toThrow(RuntimeException::class);
+});
