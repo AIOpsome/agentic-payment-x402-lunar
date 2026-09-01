@@ -1,9 +1,21 @@
-# agentic-payment-x402-lunar
+# Agentic Pay for Lunar
 
-Crypto payment driver for [Lunar](https://lunarphp.io) — pay with crypto as a
-human (wallet-signed on-chain transfer at checkout) or as an agent (x402
-HTTP-402 payment challenge/response). USDC on Base, via the
-[x402 protocol](https://github.com/coinbase/x402) (v2).
+[![Latest Version on Packagist](https://img.shields.io/packagist/v/aiopsome/agentic-payment-x402-lunar.svg?style=flat-square)](https://packagist.org/packages/aiopsome/agentic-payment-x402-lunar)
+[![Total Downloads](https://img.shields.io/packagist/dt/aiopsome/agentic-payment-x402-lunar.svg?style=flat-square)](https://packagist.org/packages/aiopsome/agentic-payment-x402-lunar)
+[![PHP Version](https://img.shields.io/packagist/dependency-v/aiopsome/agentic-payment-x402-lunar/php.svg?style=flat-square)](https://packagist.org/packages/aiopsome/agentic-payment-x402-lunar)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
+[![Lunar](https://img.shields.io/badge/Lunar-v1.0%2B-5B21B6.svg?style=flat-square)](https://lunarphp.io)
+[![Protocol](https://img.shields.io/badge/protocol-x402%20v2-blueviolet.svg?style=flat-square)](https://x402.org)
+[![Network](https://img.shields.io/badge/network-Base%20(8453)-0052FF.svg?style=flat-square)](https://base.org)
+
+> **Package:** `aiopsome/agentic-payment-x402-lunar` · **Ecosystem:** [AIOpsome Agentic Commerce](https://github.com/AIOpsome)
+
+Crypto and x402 payment driver for [Lunar](https://lunarphp.io) — accept stablecoin payments from humans (wallet-signed on-chain transfer at checkout) and AI shopping agents (x402 HTTP-402 payment challenge/response). USDC on Base, via the [x402 protocol](https://github.com/coinbase/x402) (v2).
+
+Part of the **Agentic Pay** suite by [AIOpsome](https://aiopsome.com):
+- 🛒 **[Agentic Pay for WooCommerce](https://github.com/AIOpsome/agentic-payment-x402-woocommerce)** — WordPress / WooCommerce Gateway (`agentic-pay-for-woocommerce`)
+- 🛍️ **[Agentic Pay for Vendure](https://github.com/AIOpsome/agentic-payment-x402-vendure)** — Vendure Plugin (`agentic-payment-x402-vendure`)
+- 🌙 **[Agentic Pay for Lunar](https://github.com/AIOpsome/agentic-payment-x402-lunar)** — Lunar Driver (`aiopsome/agentic-payment-x402-lunar`)
 
 **Status: beta.** Settlement core, payload/response cross-validation, an
 audit-trail/idempotency guard, and both checkout entry points are
