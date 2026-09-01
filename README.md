@@ -24,7 +24,7 @@ quietly.
 ## Installation
 
 ```bash
-composer require wakqasahmed/agentic-payment-x402-lunar
+composer require aiopsome/agentic-payment-x402-lunar
 php artisan vendor:publish --tag=lunar-crypto.config
 php artisan migrate
 ```
