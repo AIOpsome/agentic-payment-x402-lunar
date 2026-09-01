@@ -1,6 +1,6 @@
 {
   "name": "agentic-payment-x402-lunar",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "description": "Changeset/versioning tooling only — this is a Composer package, not an npm package. Never published to npm.",
   "scripts": {
