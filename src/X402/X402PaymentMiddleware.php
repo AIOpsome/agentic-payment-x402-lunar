@@ -86,21 +86,40 @@ class X402PaymentMiddleware
 
         $requirements = $this->buildRequirements->execute($cart->total, config('lunar-crypto.x402'), 'x402_pay_to');
 
-        $header = $request->header('X-PAYMENT');
+        $header = $request->header('PAYMENT-SIGNATURE')
+            ?? $request->header('Payment-Signature')
+            ?? $request->header('X-PAYMENT')
+            ?? $request->header('X-Payment');
 
         if (! $header) {
-            return response()->json([
+            $paymentRequired = [
                 'x402Version' => 2,
-                'error' => 'X-PAYMENT header is required',
                 'resource' => ['url' => $request->fullUrl()],
                 'accepts' => [$requirements],
-            ], 402);
+            ];
+            $encodedRequired = base64_encode(json_encode($paymentRequired));
+
+            return response()->json([
+                'x402Version' => 2,
+                'error' => 'Payment Required',
+                'resource' => ['url' => $request->fullUrl()],
+                'accepts' => [$requirements],
+            ], 402, [
+                'PAYMENT-REQUIRED' => $encodedRequired,
+                'Payment-Required' => $encodedRequired,
+                'X-Payment-Requirements' => json_encode($requirements),
+            ]);
         }
 
-        $payload = json_decode(base64_decode($header), true);
+        $decoded = base64_decode($header, true);
+        $payload = json_decode($decoded !== false ? $decoded : $header, true);
 
-        if (! $payload) {
-            return response()->json(['error' => 'Malformed X-PAYMENT header'], 402);
+        if (! is_array($payload)) {
+            $payload = json_decode($header, true);
+        }
+
+        if (! is_array($payload)) {
+            return response()->json(['error' => 'Malformed payment signature header'], 402);
         }
 
         $result = $this->authorizeCryptoPayment->execute($cart, $payload, config('lunar-crypto.x402'), null, 'x402_pay_to');
@@ -111,7 +130,21 @@ class X402PaymentMiddleware
 
         $request->attributes->set('lunar_crypto_order', $result->order);
 
-        return $next($request);
+        $response = $next($request);
+
+        if ($result->transaction) {
+            $settlementResponse = [
+                'success' => true,
+                'transaction' => $result->transaction,
+                'network' => $result->network,
+            ];
+            $encodedResponse = base64_encode(json_encode($settlementResponse));
+            $response->headers->set('PAYMENT-RESPONSE', $encodedResponse);
+            $response->headers->set('Payment-Response', $encodedResponse);
+            $response->headers->set('X-Payment-Transaction', $result->transaction);
+        }
+
+        return $response;
     }
 
     /**

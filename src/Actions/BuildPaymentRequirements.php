@@ -12,6 +12,11 @@ use Lunar\DataTypes\Price;
  */
 class BuildPaymentRequirements
 {
+    public const DEFAULT_ASSETS = [
+        'eip155:8453' => '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+        'eip155:84532' => '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
+    ];
+
     public function __construct(
         protected ConvertToAssetUnits $convert,
         protected ResolvePayeeAddress $resolvePayee,
@@ -27,11 +32,17 @@ class BuildPaymentRequirements
             peggedCurrency: $config['pegged_currency'] ?? config('lunar-crypto.pegged_currency', 'USD'),
         );
 
+        $network = $config['network'] ?? config('lunar-crypto.network', 'eip155:8453');
+        $asset = $config['asset']
+            ?? config('lunar-crypto.asset')
+            ?? self::DEFAULT_ASSETS[$network]
+            ?? self::DEFAULT_ASSETS['eip155:8453'];
+
         return [
             'scheme' => 'exact',
-            'network' => $config['network'] ?? config('lunar-crypto.network'),
+            'network' => $network,
             'amount' => $amount,
-            'asset' => $config['asset'] ?? config('lunar-crypto.asset'),
+            'asset' => $asset,
             'payTo' => $this->resolvePayee->execute($payeeKey, $config),
             'maxTimeoutSeconds' => 60,
         ];

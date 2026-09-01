@@ -69,7 +69,12 @@ class AuthorizeCryptoPayment
         $settlement = CryptoSettlement::where('cart_id', $order->cart_id)->latest()->first();
 
         if ($settlement?->isRecorded()) {
-            return new CryptoAuthorizationResult(success: true, order: $order);
+            return new CryptoAuthorizationResult(
+                success: true,
+                order: $order,
+                transaction: $settlement->tx_hash,
+                network: $settlement->network,
+            );
         }
 
         if (! $settlement) {
@@ -93,7 +98,12 @@ class AuthorizeCryptoPayment
                 $settlement = CryptoSettlement::where('cart_id', $order->cart_id)->latest()->first();
 
                 if ($settlement?->isRecorded()) {
-                    return new CryptoAuthorizationResult(success: true, order: $order);
+                    return new CryptoAuthorizationResult(
+                        success: true,
+                        order: $order,
+                        transaction: $settlement->tx_hash,
+                        network: $settlement->network,
+                    );
                 }
 
                 if (! $settlement) {
@@ -172,6 +182,11 @@ class AuthorizeCryptoPayment
             );
         }
 
-        return new CryptoAuthorizationResult(success: true, order: $order);
+        return new CryptoAuthorizationResult(
+            success: true,
+            order: $order,
+            transaction: $settlement->tx_hash,
+            network: $settlement->network,
+        );
     }
 }

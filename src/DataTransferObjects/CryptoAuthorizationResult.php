@@ -10,5 +10,7 @@ class CryptoAuthorizationResult
         public bool $success,
         public ?Order $order = null,
         public ?string $message = null,
+        public ?string $transaction = null,
+        public ?string $network = null,
     ) {}
 }
